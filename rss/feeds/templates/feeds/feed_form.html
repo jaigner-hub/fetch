@@ -1,0 +1,43 @@
+{% extends 'feeds/base.html' %}
+
+{% block title %}Edit Feed - RSS Feed Aggregator{% endblock %}
+
+{% block content %}
+<h2>Edit Feed</h2>
+
+<div style="margin-bottom: 1rem;">
+    <strong>Feed URL:</strong> <a href="{{ form.instance.feed_url }}" target="_blank">{{ form.instance.feed_url }}</a><br>
+    <strong>Website:</strong> <a href="{% url 'feeds:website-detail' form.instance.website.pk %}">{{ form.instance.website.name }}</a><br>
+    <strong>Type:</strong> {{ form.instance.get_feed_type_display }}
+</div>
+
+<form method="post">
+    {% csrf_token %}
+    
+    {% if form.errors %}
+    <div class="message error">
+        Please correct the errors below.
+    </div>
+    {% endif %}
+    
+    {% for field in form %}
+    <div class="form-group">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}
+        <small style="color: #666;">{{ field.help_text }}</small>
+        {% endif %}
+        {% if field.errors %}
+        <div style="color: #e74c3c; margin-top: 0.5rem;">
+            {{ field.errors }}
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+    
+    <div>
+        <button type="submit" class="btn btn-success">Update Feed</button>
+        <a href="{% url 'feeds:feed-detail' form.instance.pk %}" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+{% endblock %}

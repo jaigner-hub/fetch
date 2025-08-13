@@ -1,0 +1,103 @@
+{% extends 'feeds/base.html' %}
+
+{% block title %}Feeds - RSS Feed Aggregator{% endblock %}
+
+{% block content %}
+<h2>Feeds</h2>
+
+<div class="search-bar">
+    <form method="get" style="display: flex; width: 100%; gap: 0.5rem;">
+        <input type="text" name="search" placeholder="Search feeds..." value="{{ request.GET.search }}">
+        <select name="website">
+            <option value="">All Websites</option>
+            {% for website in websites %}
+            <option value="{{ website.pk }}" {% if request.GET.website == website.pk|stringformat:"s" %}selected{% endif %}>
+                {{ website.name }}
+            </option>
+            {% endfor %}
+        </select>
+        <select name="type">
+            <option value="">All Types</option>
+            {% for type_code, type_name in feed_types %}
+            <option value="{{ type_code }}" {% if request.GET.type == type_code %}selected{% endif %}>
+                {{ type_name }}
+            </option>
+            {% endfor %}
+        </select>
+        <select name="active">
+            <option value="">All Status</option>
+            <option value="true" {% if request.GET.active == "true" %}selected{% endif %}>Active</option>
+            <option value="false" {% if request.GET.active == "false" %}selected{% endif %}>Inactive</option>
+        </select>
+        <button type="submit" class="btn">Search</button>
+        <a href="{% url 'feeds:feed-list' %}" class="btn btn-secondary">Clear</a>
+    </form>
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>Feed</th>
+            <th>Website</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Articles</th>
+            <th>Latest Article</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for feed in feeds %}
+        <tr>
+            <td>
+                <a href="{% url 'feeds:feed-detail' feed.pk %}">
+                    {{ feed.title|default:feed.feed_url|truncatechars:40 }}
+                </a>
+            </td>
+            <td>{{ feed.website.name }}</td>
+            <td>
+                <span class="badge badge-info">{{ feed.get_feed_type_display }}</span>
+            </td>
+            <td>
+                {% if feed.active %}
+                    <span class="badge badge-success">Active</span>
+                {% else %}
+                    <span class="badge badge-danger">Inactive</span>
+                {% endif %}
+                {% if feed.error_count > 0 %}
+                    <span class="badge badge-warning">{{ feed.error_count }} errors</span>
+                {% endif %}
+            </td>
+            <td>{{ feed.article_count }}</td>
+            <td>{{ feed.latest_article|date:"Y-m-d"|default:"-" }}</td>
+            <td>
+                <a href="{% url 'feeds:feed-detail' feed.pk %}" class="btn btn-sm">View</a>
+                <a href="{% url 'feeds:feed-edit' feed.pk %}" class="btn btn-sm btn-secondary">Edit</a>
+            </td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="7">No feeds found.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% if is_paginated %}
+<div class="pagination">
+    {% if page_obj.has_previous %}
+        <a href="?page=1{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">First</a>
+        <a href="?page={{ page_obj.previous_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Previous</a>
+    {% endif %}
+    
+    <span class="current">
+        Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+    </span>
+    
+    {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Next</a>
+        <a href="?page={{ page_obj.paginator.num_pages }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Last</a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

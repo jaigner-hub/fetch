@@ -1,0 +1,119 @@
+{% extends 'feeds/base.html' %}
+
+{% block title %}{{ feed.title|default:feed.feed_url }} - RSS Feed Aggregator{% endblock %}
+
+{% block content %}
+<h2>{{ feed.title|default:"Untitled Feed" }}</h2>
+
+<div style="margin-bottom: 1rem;">
+    <strong>Website:</strong> <a href="{% url 'feeds:website-detail' feed.website.pk %}">{{ feed.website.name }}</a><br>
+    <strong>Feed URL:</strong> <a href="{{ feed.feed_url }}" target="_blank">{{ feed.feed_url|truncatechars:80 }}</a><br>
+    <strong>Type:</strong> <span class="badge badge-info">{{ feed.get_feed_type_display }}</span><br>
+    <strong>Status:</strong> 
+    {% if feed.active %}
+        <span class="badge badge-success">Active</span>
+    {% else %}
+        <span class="badge badge-danger">Inactive</span>
+    {% endif %}
+    {% if feed.error_count > 0 %}
+        <span class="badge badge-warning">{{ feed.error_count }} consecutive errors</span>
+    {% endif %}<br>
+    <strong>Description:</strong> {{ feed.description|default:"No description" }}<br>
+    <strong>Last Checked:</strong> {{ feed.last_checked|date:"Y-m-d H:i"|default:"Never" }}<br>
+    <strong>Last Successful Fetch:</strong> {{ feed.last_successful_fetch|date:"Y-m-d H:i"|default:"Never" }}<br>
+    {% if feed.last_error %}
+    <strong>Last Error:</strong> <code style="color: #e74c3c;">{{ feed.last_error|truncatechars:200 }}</code><br>
+    {% endif %}
+</div>
+
+<div style="margin-bottom: 2rem;">
+    <a href="{% url 'feeds:feed-edit' feed.pk %}" class="btn">Edit</a>
+    <form method="post" action="{% url 'feeds:feed-refresh' feed.pk %}" style="display: inline;">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-success">Refresh Now</button>
+    </form>
+</div>
+
+<div class="stats-grid" style="margin-bottom: 2rem;">
+    <div class="stat-card">
+        <h3>Total Articles</h3>
+        <div class="value">{{ stats.total_articles }}</div>
+    </div>
+    <div class="stat-card">
+        <h3>Articles Last Week</h3>
+        <div class="value">{{ stats.articles_last_week }}</div>
+    </div>
+    <div class="stat-card">
+        <h3>Success Rate</h3>
+        <div class="value">{{ stats.success_rate|floatformat:0 }}%</div>
+    </div>
+</div>
+
+<h3>Recent Articles</h3>
+<table>
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Author</th>
+            <th>Published</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for article in recent_articles %}
+        <tr>
+            <td>
+                <a href="{% url 'feeds:article-detail' article.pk %}">
+                    {{ article.title|truncatechars:60 }}
+                </a>
+            </td>
+            <td>{{ article.author|default:"-" }}</td>
+            <td>{{ article.published_date|date:"Y-m-d H:i"|default:article.fetched_at|date:"Y-m-d H:i" }}</td>
+            <td>
+                <a href="{{ article.url }}" target="_blank" class="btn btn-sm">Original</a>
+            </td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="4">No articles yet.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h3 style="margin-top: 2rem;">Recent Fetch Logs</h3>
+<table>
+    <thead>
+        <tr>
+            <th>Started</th>
+            <th>Completed</th>
+            <th>Status</th>
+            <th>New</th>
+            <th>Updated</th>
+            <th>Error</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for log in fetch_logs %}
+        <tr>
+            <td>{{ log.started_at|date:"Y-m-d H:i" }}</td>
+            <td>{{ log.completed_at|date:"Y-m-d H:i"|default:"-" }}</td>
+            <td>
+                {% if log.success %}
+                    <span class="badge badge-success">Success</span>
+                {% else %}
+                    <span class="badge badge-danger">Failed</span>
+                {% endif %}
+            </td>
+            <td>{{ log.new_articles }}</td>
+            <td>{{ log.updated_articles }}</td>
+            <td>{{ log.error_message|truncatechars:50|default:"-" }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="6">No fetch logs yet.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

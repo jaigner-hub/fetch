@@ -1,0 +1,133 @@
+{% extends 'feeds/base.html' %}
+
+{% block title %}Dashboard - RSS Feed Aggregator{% endblock %}
+
+{% block content %}
+<h2>Dashboard</h2>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <h3>Active Websites</h3>
+        <div class="value">{{ website_count }}</div>
+    </div>
+    <div class="stat-card">
+        <h3>Active Feeds</h3>
+        <div class="value">{{ feed_count }}</div>
+    </div>
+    <div class="stat-card">
+        <h3>Total Articles</h3>
+        <div class="value">{{ article_count }}</div>
+    </div>
+</div>
+
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 2rem;">
+    <div>
+        <h3>Recent Articles</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Website</th>
+                    <th>Published</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for article in recent_articles %}
+                <tr>
+                    <td>
+                        <a href="{% url 'feeds:article-detail' article.pk %}">
+                            {{ article.title|truncatechars:50 }}
+                        </a>
+                    </td>
+                    <td>{{ article.feed.website.name }}</td>
+                    <td>{{ article.published_date|date:"Y-m-d H:i" }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="3">No articles yet</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <div>
+        <h3>Feeds with Errors</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Feed</th>
+                    <th>Errors</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for feed in feeds_with_errors %}
+                <tr>
+                    <td>
+                        <a href="{% url 'feeds:feed-detail' feed.pk %}">
+                            {{ feed.title|default:feed.feed_url|truncatechars:30 }}
+                        </a>
+                    </td>
+                    <td>
+                        <span class="badge badge-danger">{{ feed.error_count }}</span>
+                    </td>
+                    <td>
+                        <a href="{% url 'feeds:feed-detail' feed.pk %}" class="btn btn-sm">View</a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="3">No feeds with errors</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div style="margin-top: 2rem;">
+    <h3>Recent Fetch Activity</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Feed</th>
+                <th>Started</th>
+                <th>Status</th>
+                <th>New Articles</th>
+                <th>Updated Articles</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for log in recent_fetch_logs %}
+            <tr>
+                <td>
+                    <a href="{% url 'feeds:feed-detail' log.feed.pk %}">
+                        {{ log.feed.title|default:log.feed.feed_url|truncatechars:40 }}
+                    </a>
+                </td>
+                <td>{{ log.started_at|date:"Y-m-d H:i" }}</td>
+                <td>
+                    {% if log.success %}
+                        <span class="badge badge-success">Success</span>
+                    {% else %}
+                        <span class="badge badge-danger">Failed</span>
+                    {% endif %}
+                </td>
+                <td>{{ log.new_articles }}</td>
+                <td>{{ log.updated_articles }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5">No fetch activity yet</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div style="margin-top: 2rem;">
+    <a href="{% url 'feeds:website-add' %}" class="btn btn-success">Add Website</a>
+    <a href="{% url 'feeds:api-stats' %}" class="btn btn-secondary">View API Stats</a>
+</div>
+{% endblock %}

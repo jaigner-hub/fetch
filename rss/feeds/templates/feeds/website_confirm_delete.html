@@ -1,0 +1,26 @@
+{% extends 'feeds/base.html' %}
+
+{% block title %}Delete {{ website.name }} - RSS Feed Aggregator{% endblock %}
+
+{% block content %}
+<h2>Delete Website</h2>
+
+<div class="message error">
+    <strong>Warning:</strong> This action cannot be undone.
+</div>
+
+<p>Are you sure you want to delete the website "<strong>{{ website.name }}</strong>"?</p>
+
+<p>This will also delete:</p>
+<ul style="margin: 1rem 0; padding-left: 2rem;">
+    <li>{{ website.feeds.count }} feed(s)</li>
+    <li>All articles from this website</li>
+    <li>All fetch logs</li>
+</ul>
+
+<form method="post">
+    {% csrf_token %}
+    <button type="submit" class="btn btn-danger">Yes, Delete</button>
+    <a href="{% url 'feeds:website-detail' website.pk %}" class="btn btn-secondary">Cancel</a>
+</form>
+{% endblock %}

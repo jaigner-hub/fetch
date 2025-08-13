@@ -1,0 +1,87 @@
+{% extends 'feeds/base.html' %}
+
+{% block title %}Articles - RSS Feed Aggregator{% endblock %}
+
+{% block content %}
+<h2>Articles</h2>
+
+<div class="search-bar">
+    <form method="get" style="display: flex; width: 100%; gap: 0.5rem; flex-wrap: wrap;">
+        <input type="text" name="search" placeholder="Search articles..." value="{{ request.GET.search }}" style="flex: 1; min-width: 200px;">
+        <select name="website">
+            <option value="">All Websites</option>
+            {% for website in websites %}
+            <option value="{{ website.pk }}" {% if request.GET.website == website.pk|stringformat:"s" %}selected{% endif %}>
+                {{ website.name }}
+            </option>
+            {% endfor %}
+        </select>
+        <select name="feed">
+            <option value="">All Feeds</option>
+            {% for feed in feeds %}
+            <option value="{{ feed.pk }}" {% if request.GET.feed == feed.pk|stringformat:"s" %}selected{% endif %}>
+                {{ feed.website.name }} - {{ feed.title|default:feed.feed_url|truncatechars:30 }}
+            </option>
+            {% endfor %}
+        </select>
+        <input type="date" name="date_from" value="{{ request.GET.date_from }}" placeholder="From">
+        <input type="date" name="date_to" value="{{ request.GET.date_to }}" placeholder="To">
+        <button type="submit" class="btn">Search</button>
+        <a href="{% url 'feeds:article-list' %}" class="btn btn-secondary">Clear</a>
+    </form>
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Website</th>
+            <th>Feed</th>
+            <th>Author</th>
+            <th>Published</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for article in articles %}
+        <tr>
+            <td>
+                <a href="{% url 'feeds:article-detail' article.pk %}">
+                    {{ article.title|truncatechars:50 }}
+                </a>
+            </td>
+            <td>{{ article.feed.website.name }}</td>
+            <td>{{ article.feed.title|default:article.feed.feed_url|truncatechars:30 }}</td>
+            <td>{{ article.author|default:"-" }}</td>
+            <td>{{ article.published_date|date:"Y-m-d H:i"|default:article.fetched_at|date:"Y-m-d H:i" }}</td>
+            <td>
+                <a href="{% url 'feeds:article-detail' article.pk %}" class="btn btn-sm">View</a>
+                <a href="{{ article.url }}" target="_blank" class="btn btn-sm btn-secondary">Original</a>
+            </td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="6">No articles found.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% if is_paginated %}
+<div class="pagination">
+    {% if page_obj.has_previous %}
+        <a href="?page=1{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">First</a>
+        <a href="?page={{ page_obj.previous_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Previous</a>
+    {% endif %}
+    
+    <span class="current">
+        Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+    </span>
+    
+    {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Next</a>
+        <a href="?page={{ page_obj.paginator.num_pages }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Last</a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends 'feeds/base.html' %}
+
+{% block title %}{{ article.title }} - RSS Feed Aggregator{% endblock %}
+
+{% block content %}
+<h2>{{ article.title }}</h2>
+
+<div style="margin-bottom: 2rem;">
+    <strong>Website:</strong> <a href="{% url 'feeds:website-detail' article.feed.website.pk %}">{{ article.feed.website.name }}</a><br>
+    <strong>Feed:</strong> <a href="{% url 'feeds:feed-detail' article.feed.pk %}">{{ article.feed.title|default:article.feed.feed_url|truncatechars:60 }}</a><br>
+    <strong>Author:</strong> {{ article.author|default:"Unknown" }}<br>
+    <strong>Published:</strong> {{ article.published_date|date:"Y-m-d H:i"|default:"Unknown" }}<br>
+    <strong>Fetched:</strong> {{ article.fetched_at|date:"Y-m-d H:i" }}<br>
+    <strong>Original URL:</strong> <a href="{{ article.url }}" target="_blank">{{ article.url|truncatechars:80 }}</a>
+</div>
+
+{% if article.summary %}
+<div style="margin-bottom: 2rem;">
+    <h3>Summary</h3>
+    <div style="padding: 1rem; background: #f8f9fa; border-radius: 4px;">
+        {{ article.summary|linebreaks }}
+    </div>
+</div>
+{% endif %}
+
+{% if article.content %}
+<div style="margin-bottom: 2rem;">
+    <h3>Content</h3>
+    <div style="padding: 1rem; background: #f8f9fa; border-radius: 4px; max-height: 600px; overflow-y: auto;">
+        {{ article.content|linebreaks }}
+    </div>
+</div>
+{% endif %}
+
+<div style="margin-top: 2rem;">
+    <a href="{{ article.url }}" target="_blank" class="btn">View Original</a>
+    <a href="{% url 'feeds:article-list' %}?feed={{ article.feed.pk }}" class="btn btn-secondary">More from this feed</a>
+    <a href="{% url 'feeds:article-list' %}" class="btn btn-secondary">Back to Articles</a>
+</div>
+
+{% if article.raw_data %}
+<details style="margin-top: 2rem;">
+    <summary style="cursor: pointer; padding: 0.5rem; background: #ecf0f1; border-radius: 4px;">
+        <strong>Raw Feed Data (Debug)</strong>
+    </summary>
+    <pre style="background: #2c3e50; color: #ecf0f1; padding: 1rem; border-radius: 4px; overflow-x: auto; margin-top: 0.5rem;">{{ article.raw_data|pprint }}</pre>
+</details>
+{% endif %}
+{% endblock %}

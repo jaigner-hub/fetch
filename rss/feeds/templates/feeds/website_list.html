@@ -1,0 +1,79 @@
+{% extends 'feeds/base.html' %}
+
+{% block title %}Websites - RSS Feed Aggregator{% endblock %}
+
+{% block content %}
+<h2>Websites</h2>
+
+<div class="search-bar">
+    <form method="get" style="display: flex; width: 100%; gap: 0.5rem;">
+        <input type="text" name="search" placeholder="Search websites..." value="{{ request.GET.search }}">
+        <button type="submit" class="btn">Search</button>
+        <a href="{% url 'feeds:website-list' %}" class="btn btn-secondary">Clear</a>
+    </form>
+</div>
+
+<div style="margin-bottom: 1rem;">
+    <a href="{% url 'feeds:website-add' %}" class="btn btn-success">Add Website</a>
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>URL</th>
+            <th>Status</th>
+            <th>Feeds</th>
+            <th>Articles</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for website in websites %}
+        <tr>
+            <td>
+                <a href="{% url 'feeds:website-detail' website.pk %}">
+                    {{ website.name }}
+                </a>
+            </td>
+            <td>{{ website.url }}</td>
+            <td>
+                {% if website.active %}
+                    <span class="badge badge-success">Active</span>
+                {% else %}
+                    <span class="badge badge-danger">Inactive</span>
+                {% endif %}
+            </td>
+            <td>{{ website.feed_count }}</td>
+            <td>{{ website.article_count }}</td>
+            <td>
+                <a href="{% url 'feeds:website-detail' website.pk %}" class="btn btn-sm">View</a>
+                <a href="{% url 'feeds:website-edit' website.pk %}" class="btn btn-sm btn-secondary">Edit</a>
+            </td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="6">No websites found. <a href="{% url 'feeds:website-add' %}">Add one?</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% if is_paginated %}
+<div class="pagination">
+    {% if page_obj.has_previous %}
+        <a href="?page=1{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">First</a>
+        <a href="?page={{ page_obj.previous_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">Previous</a>
+    {% endif %}
+    
+    <span class="current">
+        Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+    </span>
+    
+    {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">Next</a>
+        <a href="?page={{ page_obj.paginator.num_pages }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">Last</a>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

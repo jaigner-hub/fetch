@@ -1,0 +1,105 @@
+{% extends 'feeds/base.html' %}
+
+{% block title %}{{ website.name }} - RSS Feed Aggregator{% endblock %}
+
+{% block content %}
+<h2>{{ website.name }}</h2>
+
+<div style="margin-bottom: 1rem;">
+    <strong>URL:</strong> <a href="{{ website.url }}" target="_blank">{{ website.url }}</a><br>
+    <strong>Status:</strong> 
+    {% if website.active %}
+        <span class="badge badge-success">Active</span>
+    {% else %}
+        <span class="badge badge-danger">Inactive</span>
+    {% endif %}<br>
+    <strong>Created:</strong> {{ website.created_at|date:"Y-m-d H:i" }}<br>
+    <strong>Updated:</strong> {{ website.updated_at|date:"Y-m-d H:i" }}
+</div>
+
+<div style="margin-bottom: 2rem;">
+    <a href="{% url 'feeds:website-edit' website.pk %}" class="btn">Edit</a>
+    <form method="post" action="{% url 'feeds:website-discover-feeds' website.pk %}" style="display: inline;">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-success">Discover Feeds</button>
+    </form>
+    <a href="{% url 'feeds:website-delete' website.pk %}" class="btn btn-danger">Delete</a>
+</div>
+
+<h3>Feeds ({{ feeds|length }})</h3>
+<table>
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Articles</th>
+            <th>Last Checked</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for feed in feeds %}
+        <tr>
+            <td>
+                <a href="{% url 'feeds:feed-detail' feed.pk %}">
+                    {{ feed.title|default:feed.feed_url|truncatechars:40 }}
+                </a>
+            </td>
+            <td>
+                <span class="badge badge-info">{{ feed.get_feed_type_display }}</span>
+            </td>
+            <td>
+                {% if feed.active %}
+                    <span class="badge badge-success">Active</span>
+                {% else %}
+                    <span class="badge badge-danger">Inactive</span>
+                {% endif %}
+                {% if feed.error_count > 0 %}
+                    <span class="badge badge-warning">{{ feed.error_count }} errors</span>
+                {% endif %}
+            </td>
+            <td>{{ feed.article_count }}</td>
+            <td>{{ feed.last_checked|date:"Y-m-d H:i"|default:"Never" }}</td>
+            <td>
+                <a href="{% url 'feeds:feed-detail' feed.pk %}" class="btn btn-sm">View</a>
+            </td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="6">No feeds found for this website.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h3 style="margin-top: 2rem;">Recent Articles</h3>
+<table>
+    <thead>
+        <tr>
+            <th>Title</th>
+            <th>Author</th>
+            <th>Published</th>
+            <th>Feed</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for article in recent_articles %}
+        <tr>
+            <td>
+                <a href="{% url 'feeds:article-detail' article.pk %}">
+                    {{ article.title|truncatechars:50 }}
+                </a>
+            </td>
+            <td>{{ article.author|default:"-" }}</td>
+            <td>{{ article.published_date|date:"Y-m-d H:i"|default:article.fetched_at|date:"Y-m-d H:i" }}</td>
+            <td>{{ article.feed.title|default:article.feed.feed_url|truncatechars:30 }}</td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="4">No articles yet.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
