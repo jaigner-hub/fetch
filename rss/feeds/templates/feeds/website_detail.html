@@ -23,6 +23,10 @@
         {% csrf_token %}
         <button type="submit" class="btn btn-success">Discover Feeds</button>
     </form>
+    <form method="post" action="{% url 'feeds:website-fetch-all' website.pk %}" style="display: inline;">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-primary" onclick="return confirm('This will fetch all content from all feeds for this website. This may take a while. Continue?')">Fetch All Content</button>
+    </form>
     <a href="{% url 'feeds:website-delete' website.pk %}" class="btn btn-danger">Delete</a>
 </div>
 

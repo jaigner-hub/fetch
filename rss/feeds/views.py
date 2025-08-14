@@ -10,7 +10,7 @@ from django.db.models import Count, Q, Max
 from django.utils import timezone
 from datetime import timedelta
 from .models import Website, Feed, Article, FetchLog
-from .tasks import fetch_feed_content, discover_feeds_for_website
+from .tasks import fetch_feed_content, discover_feeds_for_website, fetch_all_website_content
 
 
 class WebsiteListView(LoginRequiredMixin, ListView):
@@ -251,6 +251,17 @@ def discover_feeds(request, pk):
         # Trigger async task to discover feeds
         discover_feeds_for_website.delay(website.id)
         messages.success(request, f"Feed discovery initiated for '{website.name}'!")
+        return redirect('feeds:website-detail', pk=pk)
+    return redirect('feeds:website-detail', pk=pk)
+
+
+@login_required
+def fetch_all_content(request, pk):
+    website = get_object_or_404(Website, pk=pk)
+    if request.method == 'POST':
+        # Trigger async task to fetch all content for all feeds
+        fetch_all_website_content.delay(website.id)
+        messages.success(request, f"Content fetching initiated for all feeds of '{website.name}'. This may take a while.")
         return redirect('feeds:website-detail', pk=pk)
     return redirect('feeds:website-detail', pk=pk)
 

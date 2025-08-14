@@ -14,6 +14,7 @@ urlpatterns = [
     path('websites/<int:pk>/edit/', views.WebsiteUpdateView.as_view(), name='website-edit'),
     path('websites/<int:pk>/delete/', views.WebsiteDeleteView.as_view(), name='website-delete'),
     path('websites/<int:pk>/discover/', views.discover_feeds, name='website-discover-feeds'),
+    path('websites/<int:pk>/fetch-all/', views.fetch_all_content, name='website-fetch-all'),
     
     # Feed URLs
     path('feeds/', views.FeedListView.as_view(), name='feed-list'),

@@ -176,12 +176,14 @@ def fetch_feed_content(feed_id):
                 return f"Error fetching feed: {error_msg}"
                 
         elif feed.feed_type == 'SITEMAP':
-            # Handle sitemap - fetch URLs and create Article entries
+            # Handle sitemap - fetch URLs and create Article entries with full content
             urls = fetcher.fetch_sitemap_urls(feed.feed_url)
             logger.info(f"Found {len(urls)} URLs in sitemap {feed.feed_url}")
             
             new_articles = 0
             skipped_urls = 0
+            failed_fetches = 0
+            
             for url in urls:
                 # Skip URLs that are too long
                 if len(url) > 2048:
@@ -190,11 +192,17 @@ def fetch_feed_content(feed_id):
                     continue
                     
                 # Check if article already exists
-                if not Article.objects.filter(url=url).exists():
+                existing_article = Article.objects.filter(url=url).first()
+                if not existing_article:
                     try:
-                        # Create a basic article entry from the sitemap URL
-                        # The content can be fetched later if needed
-                        title = url.split('/')[-1] or url
+                        # Fetch full content from the article URL
+                        logger.info(f"Fetching content for new article: {url}")
+                        content = fetcher.fetch_article_content(url)
+                        
+                        # Extract title from URL or use a placeholder
+                        title_slug = url.split('/')[-2] if url.endswith('/') else url.split('/')[-1]
+                        title = title_slug.replace('-', ' ').title() if title_slug else url
+                        
                         # Truncate title if too long
                         if len(title) > 500:
                             title = title[:497] + '...'
@@ -203,13 +211,32 @@ def fetch_feed_content(feed_id):
                             feed=feed,
                             url=url,
                             title=title,
+                            content=content or '',  # Store fetched content
                             summary=f"Article from sitemap: {feed.feed_url}",
                             published_date=timezone.now()  # Use current time as placeholder
                         )
                         new_articles += 1
+                        
+                        if content:
+                            logger.info(f"Created article with {len(content)} chars of content")
+                        else:
+                            logger.warning(f"Created article but could not fetch content for {url}")
+                            failed_fetches += 1
+                            
                     except Exception as e:
                         logger.error(f"Failed to create article for URL {url}: {e}")
                         continue
+                elif not existing_article.content:
+                    # Article exists but has no content - fetch it now
+                    try:
+                        logger.info(f"Fetching missing content for existing article: {url}")
+                        content = fetcher.fetch_article_content(url)
+                        if content:
+                            existing_article.content = content
+                            existing_article.save()
+                            logger.info(f"Updated article with {len(content)} chars of content")
+                    except Exception as e:
+                        logger.error(f"Failed to fetch content for existing article {url}: {e}")
             
             logger.info(f"Created {new_articles} new articles from sitemap")
             if skipped_urls > 0:
@@ -316,6 +343,45 @@ def discover_new_feeds():
         discover_feeds_for_website.delay(website.id)
     
     return f"Queued {total_websites} feed discovery tasks"
+
+
+@shared_task
+def fetch_all_website_content(website_id):
+    """
+    Fetch all content from all feeds for a specific website.
+    
+    Args:
+        website_id: ID of the Website model instance
+    """
+    try:
+        website = Website.objects.get(id=website_id)
+        logger.info(f"Starting full content fetch for website: {website.name}")
+        
+        # Get all active feeds for this website
+        feeds = website.feeds.filter(active=True)
+        total_feeds = feeds.count()
+        
+        if total_feeds == 0:
+            logger.warning(f"No active feeds found for website {website.name}")
+            return f"No active feeds found for {website.name}"
+        
+        logger.info(f"Fetching content from {total_feeds} feeds for {website.name}")
+        
+        # Queue fetch tasks for each feed
+        queued_tasks = 0
+        for feed in feeds:
+            fetch_feed_content.delay(feed.id)
+            queued_tasks += 1
+            logger.info(f"Queued fetch task for feed: {feed.title or feed.feed_url}")
+        
+        return f"Queued {queued_tasks} feed fetch tasks for {website.name}"
+        
+    except Website.DoesNotExist:
+        logger.error(f"Website with ID {website_id} not found")
+        return f"Website with ID {website_id} not found"
+    except Exception as e:
+        logger.error(f"Error fetching content for website {website_id}: {e}")
+        return f"Error: {str(e)}"
 
 
 @shared_task

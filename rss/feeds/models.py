@@ -76,6 +76,9 @@ class Article(models.Model):
                                   help_text="Hash of content to detect updates")
     raw_data = models.JSONField(default=dict, blank=True, 
                                help_text="Original raw data from feed")
+    additional_feeds = models.ManyToManyField(Feed, blank=True, 
+                                             related_name='cross_posted_articles',
+                                             help_text="Other feeds where this article appeared")
     
     class Meta:
         ordering = ['-published_date', '-fetched_at']
