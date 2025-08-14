@@ -2,6 +2,9 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.views.generic import ListView, DetailView, CreateView, UpdateView, DeleteView
 from django.urls import reverse_lazy
 from django.contrib import messages
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth import logout
 from django.http import JsonResponse
 from django.db.models import Count, Q, Max
 from django.utils import timezone
@@ -10,7 +13,7 @@ from .models import Website, Feed, Article, FetchLog
 from .tasks import fetch_feed_content, discover_feeds_for_website
 
 
-class WebsiteListView(ListView):
+class WebsiteListView(LoginRequiredMixin, ListView):
     model = Website
     template_name = 'feeds/website_list.html'
     context_object_name = 'websites'
@@ -29,7 +32,7 @@ class WebsiteListView(ListView):
         )
 
 
-class WebsiteDetailView(DetailView):
+class WebsiteDetailView(LoginRequiredMixin, DetailView):
     model = Website
     template_name = 'feeds/website_detail.html'
     context_object_name = 'website'
@@ -45,7 +48,7 @@ class WebsiteDetailView(DetailView):
         return context
 
 
-class WebsiteCreateView(CreateView):
+class WebsiteCreateView(LoginRequiredMixin, CreateView):
     model = Website
     template_name = 'feeds/website_form.html'
     fields = ['url', 'name', 'active']
@@ -59,7 +62,7 @@ class WebsiteCreateView(CreateView):
         return response
 
 
-class WebsiteUpdateView(UpdateView):
+class WebsiteUpdateView(LoginRequiredMixin, UpdateView):
     model = Website
     template_name = 'feeds/website_form.html'
     fields = ['url', 'name', 'active']
@@ -70,7 +73,7 @@ class WebsiteUpdateView(UpdateView):
         return super().form_valid(form)
 
 
-class WebsiteDeleteView(DeleteView):
+class WebsiteDeleteView(LoginRequiredMixin, DeleteView):
     model = Website
     template_name = 'feeds/website_confirm_delete.html'
     success_url = reverse_lazy('feeds:website-list')
@@ -80,7 +83,7 @@ class WebsiteDeleteView(DeleteView):
         return super().delete(request, *args, **kwargs)
 
 
-class FeedListView(ListView):
+class FeedListView(LoginRequiredMixin, ListView):
     model = Feed
     template_name = 'feeds/feed_list.html'
     context_object_name = 'feeds'
@@ -127,7 +130,7 @@ class FeedListView(ListView):
         return context
 
 
-class FeedDetailView(DetailView):
+class FeedDetailView(LoginRequiredMixin, DetailView):
     model = Feed
     template_name = 'feeds/feed_detail.html'
     context_object_name = 'feed'
@@ -153,7 +156,7 @@ class FeedDetailView(DetailView):
         return (success_count / len(recent_logs)) * 100
 
 
-class FeedUpdateView(UpdateView):
+class FeedUpdateView(LoginRequiredMixin, UpdateView):
     model = Feed
     template_name = 'feeds/feed_form.html'
     fields = ['title', 'description', 'active']
@@ -166,7 +169,7 @@ class FeedUpdateView(UpdateView):
         return super().form_valid(form)
 
 
-class ArticleListView(ListView):
+class ArticleListView(LoginRequiredMixin, ListView):
     model = Article
     template_name = 'feeds/article_list.html'
     context_object_name = 'articles'
@@ -211,12 +214,13 @@ class ArticleListView(ListView):
         return context
 
 
-class ArticleDetailView(DetailView):
+class ArticleDetailView(LoginRequiredMixin, DetailView):
     model = Article
     template_name = 'feeds/article_detail.html'
     context_object_name = 'article'
 
 
+@login_required
 def home_view(request):
     context = {
         'website_count': Website.objects.filter(active=True).count(),
@@ -229,6 +233,7 @@ def home_view(request):
     return render(request, 'feeds/home.html', context)
 
 
+@login_required
 def refresh_feed(request, pk):
     feed = get_object_or_404(Feed, pk=pk)
     if request.method == 'POST':
@@ -239,6 +244,7 @@ def refresh_feed(request, pk):
     return redirect('feeds:feed-detail', pk=pk)
 
 
+@login_required
 def discover_feeds(request, pk):
     website = get_object_or_404(Website, pk=pk)
     if request.method == 'POST':
@@ -249,6 +255,7 @@ def discover_feeds(request, pk):
     return redirect('feeds:website-detail', pk=pk)
 
 
+@login_required
 def feed_stats_api(request):
     days = int(request.GET.get('days', 7))
     start_date = timezone.now() - timedelta(days=days)
@@ -305,3 +312,10 @@ def feed_stats_api(request):
         })
     
     return JsonResponse(stats)
+
+
+def logout_view(request):
+    """Custom logout view that handles GET requests"""
+    logout(request)
+    messages.success(request, "You have been successfully logged out.")
+    return redirect('login')

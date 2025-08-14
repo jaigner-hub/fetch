@@ -7,6 +7,7 @@ from urllib.parse import urljoin, urlparse
 import feedparser
 import logging
 from typing import List, Dict, Optional
+import xml.etree.ElementTree as ET
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +191,7 @@ class FeedDiscoverer:
             List of discovered sitemap dictionaries
         """
         sitemaps = []
+        sitemap_urls = []
         
         # Check robots.txt for sitemaps
         robots_url = urljoin(self.base_url, '/robots.txt')
@@ -201,13 +203,7 @@ class FeedDiscoverer:
                         sitemap_url = line.split(':', 1)[1].strip()
                         if not sitemap_url.startswith('http'):
                             sitemap_url = urljoin(self.base_url, sitemap_url)
-                        
-                        sitemap_info = {
-                            'url': sitemap_url,
-                            'title': 'Sitemap from robots.txt',
-                            'type': 'SITEMAP'
-                        }
-                        sitemaps.append(sitemap_info)
+                        sitemap_urls.append(sitemap_url)
                         logger.info(f"Found sitemap in robots.txt: {sitemap_url}")
                         
         except requests.RequestException as e:
@@ -221,19 +217,113 @@ class FeedDiscoverer:
                 response = self.session.head(sitemap_url, timeout=self.timeout, allow_redirects=True)
                 
                 if response.status_code == 200:
-                    sitemap_info = {
-                        'url': sitemap_url,
-                        'title': f'Sitemap at {path}',
-                        'type': 'SITEMAP'
-                    }
-                    if sitemap_info not in sitemaps:
-                        sitemaps.append(sitemap_info)
+                    if sitemap_url not in sitemap_urls:
+                        sitemap_urls.append(sitemap_url)
                         logger.info(f"Found sitemap at common path: {sitemap_url}")
                         
             except requests.RequestException:
                 # Silently skip
                 pass
+        
+        # Process all discovered sitemap URLs and expand sitemap indexes
+        for url in sitemap_urls:
+            expanded_sitemaps = self._expand_sitemap(url)
+            sitemaps.extend(expanded_sitemaps)
                 
+        return sitemaps
+    
+    def _expand_sitemap(self, sitemap_url: str, max_depth: int = 2, current_depth: int = 0) -> List[Dict]:
+        """
+        Expand a sitemap URL, handling sitemap index files.
+        
+        Args:
+            sitemap_url: URL of the sitemap to expand
+            max_depth: Maximum depth for recursive expansion
+            current_depth: Current recursion depth
+            
+        Returns:
+            List of sitemap dictionaries
+        """
+        sitemaps = []
+        
+        if current_depth >= max_depth:
+            # Max depth reached, just return the sitemap as-is
+            sitemaps.append({
+                'url': sitemap_url,
+                'title': 'Sitemap',
+                'type': 'SITEMAP'
+            })
+            return sitemaps
+        
+        try:
+            response = self.session.get(sitemap_url, timeout=self.timeout)
+            response.raise_for_status()
+            
+            # Try to parse as XML
+            try:
+                root = ET.fromstring(response.content)
+                
+                # Define namespace
+                ns = {'ns': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
+                
+                # Check if this is a sitemap index (contains <sitemap> elements)
+                sitemap_elements = root.findall('ns:sitemap', ns)
+                
+                if sitemap_elements:
+                    # This is a sitemap index - expand all referenced sitemaps
+                    logger.info(f"Found sitemap index at {sitemap_url} with {len(sitemap_elements)} sitemaps")
+                    
+                    for sitemap_elem in sitemap_elements:
+                        loc_elem = sitemap_elem.find('ns:loc', ns)
+                        if loc_elem is not None and loc_elem.text:
+                            nested_url = loc_elem.text.strip()
+                            logger.info(f"Found nested sitemap: {nested_url}")
+                            
+                            # Recursively expand nested sitemaps
+                            nested_sitemaps = self._expand_sitemap(
+                                nested_url, 
+                                max_depth=max_depth, 
+                                current_depth=current_depth + 1
+                            )
+                            sitemaps.extend(nested_sitemaps)
+                else:
+                    # This is a regular sitemap (contains <url> elements)
+                    url_elements = root.findall('ns:url', ns)
+                    
+                    if url_elements:
+                        # Valid sitemap with URLs
+                        sitemaps.append({
+                            'url': sitemap_url,
+                            'title': f'Sitemap ({len(url_elements)} URLs)',
+                            'type': 'SITEMAP'
+                        })
+                        logger.info(f"Found regular sitemap at {sitemap_url} with {len(url_elements)} URLs")
+                    else:
+                        # Empty or unrecognized format
+                        sitemaps.append({
+                            'url': sitemap_url,
+                            'title': 'Sitemap',
+                            'type': 'SITEMAP'
+                        })
+                        
+            except ET.ParseError as e:
+                # Not valid XML, treat as regular sitemap
+                logger.debug(f"Could not parse {sitemap_url} as XML: {e}")
+                sitemaps.append({
+                    'url': sitemap_url,
+                    'title': 'Sitemap',
+                    'type': 'SITEMAP'
+                })
+                
+        except requests.RequestException as e:
+            logger.error(f"Error fetching sitemap {sitemap_url}: {e}")
+            # Still add it as it might be accessible later
+            sitemaps.append({
+                'url': sitemap_url,
+                'title': 'Sitemap (unreachable)',
+                'type': 'SITEMAP'
+            })
+            
         return sitemaps
     
     def _determine_feed_type(self, url: str, content_type: str) -> str:

@@ -1,0 +1,19 @@
+[Unit]
+Description=Celery Worker for RSS Feed Processor
+After=network.target redis.service
+
+[Service]
+Type=forking
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/rss/rss
+Environment="PATH=/var/www/rss/venv/bin"
+ExecStart=/var/www/rss/venv/bin/celery -A rss worker -l info --detach --pidfile=/var/run/celery/rss.pid
+ExecStop=/var/www/rss/venv/bin/celery -A rss control shutdown
+ExecReload=/bin/kill -s HUP $MAINPID
+PIDFile=/var/run/celery/rss.pid
+RuntimeDirectory=celery
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

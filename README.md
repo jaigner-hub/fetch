@@ -33,13 +33,15 @@ python manage.py createsuperuser
 redis-server
 ```
 
-5. Start Celery worker (in a separate terminal):
+5. **IMPORTANT**: Start Celery worker (in a separate terminal) - This is required for feed discovery to work:
 ```bash
+cd /var/www/rss/rss
 celery -A rss worker -l info
 ```
 
 6. Start Celery Beat for periodic tasks (in another terminal):
 ```bash
+cd /var/www/rss/rss
 celery -A rss beat -l info
 ```
 
@@ -47,6 +49,8 @@ celery -A rss beat -l info
 ```bash
 python manage.py runserver
 ```
+
+**Note**: Feed discovery will not work without Celery running! When you click "Discover Feeds" in the UI, it queues an async task that requires Celery to process it.
 
 ## Usage
 

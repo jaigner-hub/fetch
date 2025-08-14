@@ -5,7 +5,7 @@ import hashlib
 
 class Website(models.Model):
     """Model to store websites to crawl for RSS feeds and sitemaps."""
-    url = models.URLField(unique=True, help_text="Base URL of the website")
+    url = models.URLField(max_length=2048, unique=True, help_text="Base URL of the website")
     name = models.CharField(max_length=255, help_text="Name of the website")
     active = models.BooleanField(default=True, help_text="Whether to actively crawl this website")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -27,7 +27,7 @@ class Feed(models.Model):
     ]
     
     website = models.ForeignKey(Website, on_delete=models.CASCADE, related_name='feeds')
-    feed_url = models.URLField(unique=True, help_text="URL of the RSS feed or sitemap")
+    feed_url = models.URLField(max_length=2048, unique=True, help_text="URL of the RSS feed or sitemap")
     feed_type = models.CharField(max_length=10, choices=FEED_TYPE_CHOICES)
     title = models.CharField(max_length=255, blank=True, help_text="Title of the feed")
     description = models.TextField(blank=True, help_text="Description of the feed")
@@ -65,7 +65,7 @@ class Article(models.Model):
     """Model to store fetched articles/content from feeds."""
     feed = models.ForeignKey(Feed, on_delete=models.CASCADE, related_name='articles')
     title = models.CharField(max_length=500)
-    url = models.URLField(unique=True, db_index=True)
+    url = models.URLField(max_length=2048, unique=True, db_index=True)
     content = models.TextField(blank=True, help_text="Full text content of the article")
     summary = models.TextField(blank=True, help_text="Summary or excerpt")
     author = models.CharField(max_length=255, blank=True)

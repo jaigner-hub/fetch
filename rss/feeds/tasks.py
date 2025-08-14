@@ -169,16 +169,55 @@ def fetch_feed_content(feed_id):
                 return f"Error fetching feed: {error_msg}"
                 
         elif feed.feed_type == 'SITEMAP':
-            # Handle sitemap differently - just get URLs, don't fetch content
+            # Handle sitemap - fetch URLs and create Article entries
             urls = fetcher.fetch_sitemap_urls(feed.feed_url)
             logger.info(f"Found {len(urls)} URLs in sitemap {feed.feed_url}")
+            
+            new_articles = 0
+            skipped_urls = 0
+            for url in urls:
+                # Skip URLs that are too long
+                if len(url) > 2048:
+                    logger.warning(f"Skipping URL (too long): {url[:100]}...")
+                    skipped_urls += 1
+                    continue
+                    
+                # Check if article already exists
+                if not Article.objects.filter(url=url).exists():
+                    try:
+                        # Create a basic article entry from the sitemap URL
+                        # The content can be fetched later if needed
+                        title = url.split('/')[-1] or url
+                        # Truncate title if too long
+                        if len(title) > 500:
+                            title = title[:497] + '...'
+                            
+                        Article.objects.create(
+                            feed=feed,
+                            url=url,
+                            title=title,
+                            summary=f"Article from sitemap: {feed.feed_url}",
+                            published_date=timezone.now()  # Use current time as placeholder
+                        )
+                        new_articles += 1
+                    except Exception as e:
+                        logger.error(f"Failed to create article for URL {url}: {e}")
+                        continue
+            
+            logger.info(f"Created {new_articles} new articles from sitemap")
+            if skipped_urls > 0:
+                logger.warning(f"Skipped {skipped_urls} URLs due to length restrictions")
             
             feed.mark_checked(success=True)
             fetch_log.completed_at = timezone.now()
             fetch_log.success = True
+            fetch_log.new_articles = new_articles
             fetch_log.save()
             
-            return f"Found {len(urls)} URLs in sitemap"
+            result_msg = f"Found {len(urls)} URLs in sitemap, created {new_articles} new articles"
+            if skipped_urls > 0:
+                result_msg += f" (skipped {skipped_urls} URLs due to length)"
+            return result_msg
             
     except Feed.DoesNotExist:
         logger.error(f"Feed with ID {feed_id} not found")

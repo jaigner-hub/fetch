@@ -247,6 +247,16 @@
                 <li><a href="{% url 'feeds:feed-list' %}">Feeds</a></li>
                 <li><a href="{% url 'feeds:article-list' %}">Articles</a></li>
                 <li><a href="/admin/">Admin</a></li>
+                {% if user.is_authenticated %}
+                <li style="margin-left: auto;">
+                    <span style="color: #95a5a6; padding: 0.5rem 1rem; display: inline-block;">
+                        Welcome, {{ user.username }}
+                    </span>
+                </li>
+                <li><a href="{% url 'logout' %}">Logout</a></li>
+                {% else %}
+                <li style="margin-left: auto;"><a href="{% url 'login' %}">Login</a></li>
+                {% endif %}
             </ul>
         </div>
     </nav>
