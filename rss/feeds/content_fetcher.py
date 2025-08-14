@@ -11,6 +11,8 @@ import logging
 import hashlib
 from django.utils import timezone
 import pytz
+import time
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -18,14 +20,17 @@ logger = logging.getLogger(__name__)
 class ContentFetcher:
     """Fetches and processes content from RSS feeds and web pages."""
     
-    def __init__(self, timeout: int = 15):
+    def __init__(self, timeout: int = 15, rate_limit_delay: float = 1.0):
         """
         Initialize the content fetcher.
         
         Args:
             timeout: Request timeout in seconds
+            rate_limit_delay: Delay between requests to same domain in seconds
         """
         self.timeout = timeout
+        self.rate_limit_delay = rate_limit_delay
+        self.last_request_time = defaultdict(float)  # Track last request time per domain
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (compatible; RSS Content Fetcher/1.0)'
@@ -115,20 +120,26 @@ class ContentFetcher:
             # Get title
             title = entry.get('title', 'Untitled')
             
-            # Get content/summary
-            content = ''
+            # Get RSS content/summary (usually just a snippet)
+            rss_content = ''
             summary = entry.get('summary', '')
             
-            # Try to get full content from various fields
+            # Try to get content from RSS feed
             if hasattr(entry, 'content'):
                 for content_item in entry.content:
                     if content_item.get('value'):
-                        content = content_item['value']
+                        rss_content = content_item['value']
                         break
             
-            # If no content, use summary
-            if not content:
-                content = summary
+            # If no RSS content, use summary
+            if not rss_content:
+                rss_content = summary
+            
+            # Fetch full article content from the article URL
+            full_content = self.fetch_article_content(article_url)
+            
+            # Use full content if available, otherwise fall back to RSS content
+            content = full_content if full_content else rss_content
             
             # Get author
             author = entry.get('author', '')
@@ -170,43 +181,94 @@ class ContentFetcher:
             logger.error(f"Error parsing entry: {e}")
             return None
     
-    def fetch_article_content(self, article_url: str) -> Optional[str]:
+    def _apply_rate_limit(self, url: str):
+        """Apply rate limiting per domain."""
+        domain = urlparse(url).netloc
+        now = time.time()
+        last_request = self.last_request_time[domain]
+        
+        if last_request > 0:
+            time_since_last = now - last_request
+            if time_since_last < self.rate_limit_delay:
+                sleep_time = self.rate_limit_delay - time_since_last
+                logger.debug(f"Rate limiting: sleeping {sleep_time:.2f}s for domain {domain}")
+                time.sleep(sleep_time)
+        
+        self.last_request_time[domain] = time.time()
+    
+    def fetch_article_content(self, article_url: str, max_retries: int = 2) -> Optional[str]:
         """
         Fetch and extract main content from an article web page.
         
         Args:
             article_url: URL of the article
+            max_retries: Maximum number of retry attempts
             
         Returns:
             Extracted article content or None
         """
-        try:
-            response = self.session.get(article_url, timeout=self.timeout)
-            response.raise_for_status()
-            
-            # Parse HTML
-            soup = BeautifulSoup(response.content, 'lxml')
-            
-            # Remove script and style elements
-            for script in soup(['script', 'style']):
-                script.decompose()
-            
-            # Try to find article content using common patterns
-            content = self._extract_article_content(soup)
-            
-            if content:
-                logger.info(f"Successfully extracted content from {article_url}")
-                return content
-            else:
-                logger.warning(f"Could not extract content from {article_url}")
-                return None
+        # Apply rate limiting
+        self._apply_rate_limit(article_url)
+        
+        for attempt in range(max_retries + 1):
+            try:
+                # Add headers to avoid being blocked
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5',
+                    'Accept-Encoding': 'gzip, deflate',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1'
+                }
                 
-        except requests.RequestException as e:
-            logger.error(f"Error fetching article {article_url}: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Error processing article {article_url}: {e}")
-            return None
+                response = self.session.get(article_url, timeout=self.timeout, headers=headers)
+                response.raise_for_status()
+                
+                # Check content type
+                content_type = response.headers.get('content-type', '').lower()
+                if 'text/html' not in content_type and 'application/xhtml' not in content_type:
+                    logger.warning(f"Non-HTML content type for {article_url}: {content_type}")
+                    return None
+                
+                # Parse HTML
+                soup = BeautifulSoup(response.content, 'lxml')
+                
+                # Remove script and style elements
+                for script in soup(['script', 'style']):
+                    script.decompose()
+                
+                # Try to find article content using common patterns
+                content = self._extract_article_content(soup)
+                
+                if content:
+                    logger.info(f"Successfully extracted {len(content)} characters from {article_url}")
+                    return content
+                else:
+                    logger.warning(f"Could not extract meaningful content from {article_url}")
+                    return None
+                    
+            except requests.exceptions.Timeout:
+                logger.warning(f"Timeout fetching {article_url} (attempt {attempt + 1}/{max_retries + 1})")
+                if attempt < max_retries:
+                    continue
+                return None
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 403:
+                    logger.warning(f"Access forbidden (403) for {article_url}")
+                elif e.response.status_code == 404:
+                    logger.warning(f"Article not found (404): {article_url}")
+                else:
+                    logger.error(f"HTTP error {e.response.status_code} for {article_url}")
+                return None
+            except requests.RequestException as e:
+                logger.error(f"Network error fetching {article_url}: {e}")
+                return None
+            except Exception as e:
+                logger.error(f"Unexpected error processing {article_url}: {e}")
+                return None
+        
+        return None
     
     def _extract_article_content(self, soup: BeautifulSoup) -> Optional[str]:
         """
@@ -218,20 +280,40 @@ class ContentFetcher:
         Returns:
             Extracted content text or None
         """
+        # Remove unwanted elements first
+        for element in soup(['nav', 'header', 'footer', 'aside', 'form', 'button']):
+            element.decompose()
+        
+        # Remove elements with specific classes/ids that typically contain non-content
+        for selector in ['.sidebar', '.navigation', '.menu', '.advertisement', 
+                        '.ads', '#header', '#footer', '#comments', '.social-share',
+                        '.related-posts', '.recommended', '.newsletter', '.popup']:
+            for element in soup.select(selector):
+                element.decompose()
+        
         # Try to find article content using various selectors
         content_selectors = [
             'article',
-            'main',
-            '[role="main"]',
+            '[role="main"] article',
+            'main article',
             '.post-content',
             '.entry-content',
             '.article-content',
+            '.article__body',
+            '.story-content',
+            '.content-body',
+            '.article-text',
+            '.post-body',
             '.content',
             '#content',
             '.post',
             '.article-body',
             '.story-body',
-            '[itemprop="articleBody"]'
+            '[itemprop="articleBody"]',
+            '.field-name-body',
+            '.node-content',
+            '.entry',
+            '.single-content'
         ]
         
         for selector in content_selectors:
@@ -240,24 +322,56 @@ class ContentFetcher:
                 # Get the first matching element
                 content_elem = elements[0]
                 
-                # Extract text
-                text = content_elem.get_text(separator='\n', strip=True)
+                # Remove any remaining script/style tags within content
+                for tag in content_elem(['script', 'style', 'noscript']):
+                    tag.decompose()
                 
-                # Only return if we have substantial content
-                if len(text) > 200:
-                    return text
+                # Extract text with better formatting
+                paragraphs = content_elem.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'li'])
+                text_blocks = []
+                
+                for elem in paragraphs:
+                    text = elem.get_text(strip=True)
+                    if len(text) > 30:  # Filter out very short blocks
+                        # Add appropriate spacing for headers
+                        if elem.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+                            text_blocks.append(f"\n{text}\n")
+                        else:
+                            text_blocks.append(text)
+                
+                if text_blocks and len('\n'.join(text_blocks)) > 200:
+                    return '\n\n'.join(text_blocks)
         
-        # Fallback: try to find the largest text block
-        paragraphs = soup.find_all('p')
-        if paragraphs:
+        # Fallback: try to find the largest concentration of paragraphs
+        all_paragraphs = soup.find_all('p')
+        if all_paragraphs:
+            # Group consecutive paragraphs
             text_blocks = []
-            for p in paragraphs:
+            current_block = []
+            
+            for p in all_paragraphs:
                 text = p.get_text(strip=True)
                 if len(text) > 50:  # Ignore short paragraphs
-                    text_blocks.append(text)
+                    current_block.append(text)
+                elif current_block:
+                    # End of a block
+                    if len(current_block) > 2:  # At least 3 paragraphs
+                        text_blocks.extend(current_block)
+                    current_block = []
+            
+            # Don't forget the last block
+            if len(current_block) > 2:
+                text_blocks.extend(current_block)
             
             if text_blocks:
                 return '\n\n'.join(text_blocks)
+        
+        # Last resort: get all text but filter aggressively
+        body_text = soup.get_text(separator='\n', strip=True)
+        lines = [line.strip() for line in body_text.split('\n') if len(line.strip()) > 50]
+        
+        if lines and len('\n'.join(lines)) > 500:
+            return '\n'.join(lines)
         
         return None
     

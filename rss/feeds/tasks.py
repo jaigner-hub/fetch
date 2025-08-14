@@ -137,10 +137,17 @@ def fetch_feed_content(feed_id):
                             )
                             new_articles += 1
                             logger.info(f"Created new article: {article.title}")
-                            
-                            # Optionally fetch full content if not available
-                            if not article.content and article.url:
-                                fetch_article_full_content.delay(article.id)
+                        except Exception as e:
+                            # Handle case where article exists but belongs to different feed
+                            # This can happen when the same article appears in multiple category feeds
+                            try:
+                                article = Article.objects.get(url=article_data['url'])
+                                # Add this feed as an additional feed for the article
+                                if feed != article.feed and feed not in article.additional_feeds.all():
+                                    article.additional_feeds.add(feed)
+                                    logger.info(f"Article '{article.title}' also found in feed {feed.title}")
+                            except Exception as inner_e:
+                                logger.error(f"Error handling duplicate article: {inner_e}")
                     
                     # Update feed status
                     feed.mark_checked(success=True)
