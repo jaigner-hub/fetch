@@ -458,3 +458,92 @@ class ContentFetcher:
             logger.error(f"Error fetching sitemap {sitemap_url}: {e}")
             
         return urls
+    
+    def extract_metadata(self, article_url: str) -> Dict:
+        """
+        Extract metadata from an article web page.
+        
+        Args:
+            article_url: URL of the article
+            
+        Returns:
+            Dictionary with metadata (title, description, author, published_date, etc.)
+        """
+        metadata = {
+            'title': '',
+            'description': '',
+            'author': '',
+            'published_date': None,
+            'keywords': [],
+            'image': ''
+        }
+        
+        try:
+            # Apply rate limiting
+            self._apply_rate_limit(article_url)
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8'
+            }
+            
+            response = self.session.get(article_url, timeout=self.timeout, headers=headers)
+            response.raise_for_status()
+            
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Extract title
+            og_title = soup.find('meta', property='og:title')
+            if og_title and og_title.get('content'):
+                metadata['title'] = og_title['content']
+            elif soup.title:
+                metadata['title'] = soup.title.string
+            
+            # Extract description
+            og_desc = soup.find('meta', property='og:description')
+            meta_desc = soup.find('meta', attrs={'name': 'description'})
+            if og_desc and og_desc.get('content'):
+                metadata['description'] = og_desc['content']
+            elif meta_desc and meta_desc.get('content'):
+                metadata['description'] = meta_desc['content']
+            
+            # Extract author
+            author_meta = soup.find('meta', attrs={'name': 'author'})
+            article_author = soup.find('meta', property='article:author')
+            if author_meta and author_meta.get('content'):
+                metadata['author'] = author_meta['content']
+            elif article_author and article_author.get('content'):
+                metadata['author'] = article_author['content']
+            
+            # Extract published date
+            published_time = soup.find('meta', property='article:published_time')
+            date_published = soup.find('meta', attrs={'name': 'publish_date'})
+            if published_time and published_time.get('content'):
+                try:
+                    from dateutil import parser
+                    metadata['published_date'] = parser.parse(published_time['content'])
+                except:
+                    pass
+            elif date_published and date_published.get('content'):
+                try:
+                    from dateutil import parser
+                    metadata['published_date'] = parser.parse(date_published['content'])
+                except:
+                    pass
+            
+            # Extract image
+            og_image = soup.find('meta', property='og:image')
+            if og_image and og_image.get('content'):
+                metadata['image'] = og_image['content']
+            
+            # Extract keywords
+            keywords_meta = soup.find('meta', attrs={'name': 'keywords'})
+            if keywords_meta and keywords_meta.get('content'):
+                metadata['keywords'] = [k.strip() for k in keywords_meta['content'].split(',')]
+            
+            logger.info(f"Extracted metadata for {article_url}: {metadata['title']}")
+            
+        except Exception as e:
+            logger.error(f"Error extracting metadata from {article_url}: {e}")
+        
+        return metadata

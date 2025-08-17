@@ -5,9 +5,30 @@ import hashlib
 
 class Website(models.Model):
     """Model to store websites to crawl for RSS feeds and sitemaps."""
+    FETCH_INTERVAL_CHOICES = [
+        (15, 'Every 15 minutes'),
+        (30, 'Every 30 minutes'),
+        (60, 'Every hour'),
+        (120, 'Every 2 hours'),
+        (240, 'Every 4 hours'),
+        (360, 'Every 6 hours'),
+        (720, 'Every 12 hours'),
+        (1440, 'Daily'),
+    ]
+    
     url = models.URLField(max_length=2048, unique=True, help_text="Base URL of the website")
     name = models.CharField(max_length=255, help_text="Name of the website")
     active = models.BooleanField(default=True, help_text="Whether to actively crawl this website")
+    
+    # Scheduling settings
+    auto_fetch_enabled = models.BooleanField(default=True, help_text="Enable automatic content fetching")
+    fetch_interval_minutes = models.IntegerField(
+        default=60,
+        choices=FETCH_INTERVAL_CHOICES,
+        help_text="How often to fetch new content (in minutes)"
+    )
+    last_auto_fetch = models.DateTimeField(null=True, blank=True, help_text="Last automatic fetch time")
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -16,6 +37,18 @@ class Website(models.Model):
     
     def __str__(self):
         return f"{self.name} ({self.url})"
+    
+    def is_due_for_fetch(self):
+        """Check if this website is due for content fetching."""
+        if not self.auto_fetch_enabled or not self.active:
+            return False
+        
+        if not self.last_auto_fetch:
+            return True
+        
+        from datetime import timedelta
+        next_fetch_time = self.last_auto_fetch + timedelta(minutes=self.fetch_interval_minutes)
+        return timezone.now() >= next_fetch_time
 
 
 class Feed(models.Model):

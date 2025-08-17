@@ -13,21 +13,73 @@
     {% else %}
         <span class="badge badge-danger">Inactive</span>
     {% endif %}<br>
+    <strong>Auto-Fetch:</strong> 
+    {% if website.auto_fetch_enabled %}
+        <span class="badge badge-info">Enabled</span> - {{ website.get_fetch_interval_minutes_display }}
+    {% else %}
+        <span class="badge badge-secondary">Disabled</span>
+    {% endif %}<br>
+    {% if website.last_auto_fetch %}
+        <strong>Last Auto-Fetch:</strong> {{ website.last_auto_fetch|date:"Y-m-d H:i" }}<br>
+    {% endif %}
+    {% if next_scheduled_fetch %}
+        <strong>Next Scheduled Fetch:</strong> {{ next_scheduled_fetch|date:"Y-m-d H:i" }}<br>
+    {% endif %}
     <strong>Created:</strong> {{ website.created_at|date:"Y-m-d H:i" }}<br>
     <strong>Updated:</strong> {{ website.updated_at|date:"Y-m-d H:i" }}
 </div>
 
 <div style="margin-bottom: 2rem;">
     <a href="{% url 'feeds:website-edit' website.pk %}" class="btn">Edit</a>
-    <form method="post" action="{% url 'feeds:website-discover-feeds' website.pk %}" style="display: inline;">
+    <form method="post" action="{% url 'feeds:website-discover-feeds' website.pk %}" style="display: inline;" id="discover-feeds-form">
         {% csrf_token %}
-        <button type="submit" class="btn btn-success">Discover Feeds</button>
+        <button type="submit" class="btn btn-success" id="discover-feeds-btn" title="Use Claude AI to intelligently discover RSS feeds">Discover Feeds (AI)</button>
     </form>
-    <form method="post" action="{% url 'feeds:website-fetch-all' website.pk %}" style="display: inline;">
+    <form method="post" action="{% url 'feeds:website-fetch-all' website.pk %}" style="display: inline;" id="fetch-all-form">
         {% csrf_token %}
-        <button type="submit" class="btn btn-primary" onclick="return confirm('This will fetch all content from all feeds for this website. This may take a while. Continue?')">Fetch All Content</button>
+        <button type="submit" class="btn btn-primary" id="fetch-all-btn">Fetch All Content</button>
     </form>
-    <a href="{% url 'feeds:website-delete' website.pk %}" class="btn btn-danger">Delete</a>
+    <form method="post" action="{% url 'feeds:website-delete' website.pk %}" style="display: inline;" onsubmit="return confirmDelete()">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-danger">Delete Website</button>
+    </form>
+</div>
+
+<!-- Discovery Progress Bar Section -->
+<div id="discover-progress-container" style="display: none; margin-bottom: 2rem; padding: 1rem; background: #f0f8ff; border-radius: 5px;">
+    <h4>Feed Discovery Progress</h4>
+    <div style="margin-bottom: 0.5rem;">
+        <span id="discover-message">Discovering feeds...</span>
+        <span style="float: right;">
+            <span id="discover-status">Pending</span>
+        </span>
+    </div>
+    <div style="background: #e9ecef; border-radius: 3px; overflow: hidden; height: 30px;">
+        <div id="discover-progress-bar" style="background: #17a2b8; height: 100%; width: 0%; transition: width 0.3s ease;">
+            <div class="progress-animation" style="height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent); animation: progress-shimmer 1.5s infinite;"></div>
+        </div>
+    </div>
+    <div style="margin-top: 0.5rem;">
+        <small>Feeds found: <span id="feeds-found">0</span></small>
+    </div>
+</div>
+
+<!-- Fetch Progress Bar Section -->
+<div id="fetch-progress-container" style="display: none; margin-bottom: 2rem; padding: 1rem; background: #f8f9fa; border-radius: 5px;">
+    <h4>Fetch Progress</h4>
+    <div style="margin-bottom: 0.5rem;">
+        <span id="progress-message">Initializing...</span>
+        <span style="float: right;">
+            <span id="progress-percentage">0%</span> 
+            (<span id="progress-feeds">0</span>/<span id="total-feeds">0</span> feeds)
+        </span>
+    </div>
+    <div style="background: #e9ecef; border-radius: 3px; overflow: hidden; height: 30px;">
+        <div id="progress-bar" style="background: #28a745; height: 100%; width: 0%; transition: width 0.3s ease;"></div>
+    </div>
+    <div style="margin-top: 0.5rem;">
+        <small>New articles fetched: <span id="recent-articles">0</span></small>
+    </div>
 </div>
 
 <h3>Feeds ({{ feeds|length }})</h3>
@@ -106,4 +158,227 @@
         {% endfor %}
     </tbody>
 </table>
+
+<style>
+@keyframes progress-shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(200%); }
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Discovery elements
+    const discoverForm = document.getElementById('discover-feeds-form');
+    const discoverBtn = document.getElementById('discover-feeds-btn');
+    const discoverContainer = document.getElementById('discover-progress-container');
+    const discoverProgressBar = document.getElementById('discover-progress-bar');
+    const discoverMessage = document.getElementById('discover-message');
+    const discoverStatus = document.getElementById('discover-status');
+    const feedsFoundSpan = document.getElementById('feeds-found');
+    
+    // Fetch elements
+    const fetchForm = document.getElementById('fetch-all-form');
+    const fetchBtn = document.getElementById('fetch-all-btn');
+    const progressContainer = document.getElementById('fetch-progress-container');
+    const progressBar = document.getElementById('progress-bar');
+    const progressMessage = document.getElementById('progress-message');
+    const progressPercentage = document.getElementById('progress-percentage');
+    const progressFeeds = document.getElementById('progress-feeds');
+    const totalFeedsSpan = document.getElementById('total-feeds');
+    const recentArticlesSpan = document.getElementById('recent-articles');
+    
+    let fetchPollInterval = null;
+    let discoverPollInterval = null;
+    let isPolling = false;
+    
+    // Check if fetch is already in progress on page load
+    checkFetchProgress();
+    
+    // Handle discovery form submission
+    discoverForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        // Submit the form via AJAX
+        fetch(discoverForm.action, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams(new FormData(discoverForm))
+        })
+        .then(response => {
+            if (response.ok) {
+                // Start monitoring progress
+                discoverContainer.style.display = 'block';
+                discoverBtn.disabled = true;
+                discoverBtn.textContent = 'Discovering...';
+                startDiscoveryPolling();
+            }
+        })
+        .catch(error => {
+            console.error('Error starting discovery:', error);
+            alert('Failed to start feed discovery');
+        });
+    });
+    
+    // Handle fetch form submission
+    fetchForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        if (!confirm('This will fetch all content from all feeds for this website. This may take a while. Continue?')) {
+            return;
+        }
+        
+        // Submit the form via AJAX
+        fetch(fetchForm.action, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: new URLSearchParams(new FormData(fetchForm))
+        })
+        .then(response => {
+            if (response.ok) {
+                // Start monitoring progress
+                progressContainer.style.display = 'block';
+                fetchBtn.disabled = true;
+                fetchBtn.textContent = 'Fetching...';
+                startPolling();
+            }
+        })
+        .catch(error => {
+            console.error('Error starting fetch:', error);
+            alert('Failed to start fetch process');
+        });
+    });
+    
+    function checkFetchProgress() {
+        fetch("{% url 'feeds:api-fetch-progress' website.pk %}")
+            .then(response => response.json())
+            .then(data => {
+                if (data.in_progress) {
+                    progressContainer.style.display = 'block';
+                    fetchBtn.disabled = true;
+                    fetchBtn.textContent = 'Fetching...';
+                    updateProgress(data);
+                    if (!isPolling) {
+                        startPolling();
+                    }
+                }
+            })
+            .catch(error => console.error('Error checking progress:', error));
+    }
+    
+    function startPolling() {
+        if (isPolling) return;
+        isPolling = true;
+        
+        // Poll every 2 seconds
+        pollInterval = setInterval(() => {
+            fetch("{% url 'feeds:api-fetch-progress' website.pk %}")
+                .then(response => response.json())
+                .then(data => {
+                    updateProgress(data);
+                    
+                    // Stop polling if fetch is complete
+                    if (!data.in_progress) {
+                        stopPolling();
+                        progressMessage.textContent = 'Fetch complete!';
+                        fetchBtn.disabled = false;
+                        fetchBtn.textContent = 'Fetch All Content';
+                        
+                        // Hide progress bar after 5 seconds
+                        setTimeout(() => {
+                            progressContainer.style.display = 'none';
+                            // Reload page to show new articles
+                            location.reload();
+                        }, 5000);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error polling progress:', error);
+                });
+        }, 2000);
+    }
+    
+    function stopPolling() {
+        if (pollInterval) {
+            clearInterval(pollInterval);
+            pollInterval = null;
+        }
+        isPolling = false;
+    }
+    
+    function updateProgress(data) {
+        progressBar.style.width = data.percentage + '%';
+        progressPercentage.textContent = data.percentage + '%';
+        progressFeeds.textContent = data.completed_feeds;
+        totalFeedsSpan.textContent = data.total_feeds;
+        recentArticlesSpan.textContent = data.recent_articles;
+        progressMessage.textContent = data.message;
+    }
+    
+    // Discovery polling functions
+    function startDiscoveryPolling() {
+        // Animate progress bar while discovering
+        discoverProgressBar.style.width = '100%';
+        
+        // Poll every 2 seconds
+        discoverPollInterval = setInterval(() => {
+            fetch("{% url 'feeds:api-discover-progress' website.pk %}")
+                .then(response => response.json())
+                .then(data => {
+                    updateDiscoveryProgress(data);
+                    
+                    // Stop polling if discovery is complete
+                    if (!data.in_progress) {
+                        stopDiscoveryPolling();
+                        discoverMessage.textContent = data.result || 'Discovery complete!';
+                        discoverBtn.disabled = false;
+                        discoverBtn.textContent = 'Discover Feeds (AI)';
+                        
+                        // Hide progress bar after 3 seconds and reload
+                        setTimeout(() => {
+                            discoverContainer.style.display = 'none';
+                            location.reload();
+                        }, 3000);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error polling discovery progress:', error);
+                });
+        }, 2000);
+    }
+    
+    function stopDiscoveryPolling() {
+        if (discoverPollInterval) {
+            clearInterval(discoverPollInterval);
+            discoverPollInterval = null;
+        }
+    }
+    
+    function updateDiscoveryProgress(data) {
+        discoverStatus.textContent = data.status;
+        feedsFoundSpan.textContent = data.feeds_found;
+        
+        if (data.status === 'failed') {
+            discoverProgressBar.style.background = '#dc3545';
+            discoverMessage.textContent = 'Discovery failed: ' + (data.error || 'Unknown error');
+        } else if (data.status === 'completed') {
+            discoverProgressBar.style.background = '#28a745';
+        }
+    }
+    
+    // Add delete confirmation function
+    window.confirmDelete = function() {
+        const feedCount = {{ feeds|length }};
+        const articleCount = {{ recent_articles|length }};
+        const message = `Are you sure you want to delete "{{ website.name }}"?\n\nThis will permanently delete:\n- ${feedCount} feeds\n- All associated articles\n- All fetch history\n\nThis action cannot be undone.`;
+        return confirm(message);
+    }
+});
+</script>
 {% endblock %}

@@ -5,6 +5,16 @@
 {% block content %}
 <h2>Dashboard</h2>
 
+{% if claude_enabled %}
+<div style="background: #e8f5e9; border: 1px solid #4caf50; border-radius: 4px; padding: 0.5rem 1rem; margin-bottom: 1rem; display: inline-block;">
+    <span style="color: #2e7d32;">✓ Claude AI Discovery Enabled</span>
+</div>
+{% else %}
+<div style="background: #fff3e0; border: 1px solid #ff9800; border-radius: 4px; padding: 0.5rem 1rem; margin-bottom: 1rem; display: inline-block;">
+    <span style="color: #e65100;">⚠ Claude AI Discovery Disabled (Using traditional discovery)</span>
+</div>
+{% endif %}
+
 <div class="stats-grid">
     <div class="stat-card">
         <h3>Active Websites</h3>
@@ -18,7 +28,53 @@
         <h3>Total Articles</h3>
         <div class="value">{{ article_count }}</div>
     </div>
+    <div class="stat-card">
+        <h3>Scheduled Sites</h3>
+        <div class="value">{{ scheduled_website_count }}</div>
+    </div>
 </div>
+
+{% if websites_due_soon %}
+<div style="margin-top: 2rem;">
+    <h3>Scheduled Content Fetching</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Website</th>
+                <th>Interval</th>
+                <th>Next Fetch</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in websites_due_soon %}
+            <tr>
+                <td>
+                    <a href="{% url 'feeds:website-detail' item.website.pk %}">
+                        {{ item.website.name }}
+                    </a>
+                </td>
+                <td>{{ item.website.get_fetch_interval_minutes_display }}</td>
+                <td>
+                    {% if item.next_fetch %}
+                        {{ item.next_fetch|date:"Y-m-d H:i" }}
+                    {% else %}
+                        Never fetched
+                    {% endif %}
+                </td>
+                <td>
+                    {% if item.is_overdue %}
+                        <span class="badge badge-warning">Due Now</span>
+                    {% else %}
+                        <span class="badge badge-success">Scheduled</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
 
 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; margin-top: 2rem;">
     <div>

@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -147,12 +148,22 @@ CELERY_TIMEZONE = TIME_ZONE
 from celery.schedules import crontab
 
 CELERY_BEAT_SCHEDULE = {
-    'check-feeds-every-hour': {
-        'task': 'feeds.tasks.check_all_feeds',
-        'schedule': crontab(minute=0),  # Run every hour
+    # Check for scheduled content fetches every 5 minutes
+    'check-scheduled-fetches': {
+        'task': 'feeds.tasks.check_scheduled_fetches',
+        'schedule': crontab(minute='*/5'),  # Run every 5 minutes
     },
+    # Discover new feeds daily
     'discover-feeds-daily': {
         'task': 'feeds.tasks.discover_new_feeds',
         'schedule': crontab(hour=2, minute=0),  # Run daily at 2 AM
     },
+    # Clean up old logs weekly
+    'cleanup-old-logs': {
+        'task': 'feeds.tasks.cleanup_old_logs',
+        'schedule': crontab(hour=3, minute=0, day_of_week=0),  # Run weekly on Sunday at 3 AM
+    },
 }
+
+# Anthropic Claude API Configuration
+ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')

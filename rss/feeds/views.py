@@ -1,4 +1,5 @@
 from django.shortcuts import render, get_object_or_404, redirect
+from django.http import HttpResponseRedirect
 from django.views.generic import ListView, DetailView, CreateView, UpdateView, DeleteView
 from django.urls import reverse_lazy
 from django.contrib import messages
@@ -45,13 +46,20 @@ class WebsiteDetailView(LoginRequiredMixin, DetailView):
         context['recent_articles'] = Article.objects.filter(
             feed__website=self.object
         ).select_related('feed')[:10]
+        
+        # Add scheduling info
+        from datetime import timedelta
+        if self.object.auto_fetch_enabled and self.object.last_auto_fetch:
+            next_fetch = self.object.last_auto_fetch + timedelta(minutes=self.object.fetch_interval_minutes)
+            context['next_scheduled_fetch'] = next_fetch
+        
         return context
 
 
 class WebsiteCreateView(LoginRequiredMixin, CreateView):
     model = Website
     template_name = 'feeds/website_form.html'
-    fields = ['url', 'name', 'active']
+    fields = ['url', 'name', 'active', 'auto_fetch_enabled', 'fetch_interval_minutes']
     success_url = reverse_lazy('feeds:website-list')
     
     def form_valid(self, form):
@@ -65,7 +73,7 @@ class WebsiteCreateView(LoginRequiredMixin, CreateView):
 class WebsiteUpdateView(LoginRequiredMixin, UpdateView):
     model = Website
     template_name = 'feeds/website_form.html'
-    fields = ['url', 'name', 'active']
+    fields = ['url', 'name', 'active', 'auto_fetch_enabled', 'fetch_interval_minutes']
     success_url = reverse_lazy('feeds:website-list')
     
     def form_valid(self, form):
@@ -78,9 +86,21 @@ class WebsiteDeleteView(LoginRequiredMixin, DeleteView):
     template_name = 'feeds/website_confirm_delete.html'
     success_url = reverse_lazy('feeds:website-list')
     
-    def delete(self, request, *args, **kwargs):
-        messages.success(request, f"Website deleted successfully!")
-        return super().delete(request, *args, **kwargs)
+    def get(self, request, *args, **kwargs):
+        # For GET requests, show confirmation page
+        return super().get(request, *args, **kwargs)
+    
+    def post(self, request, *args, **kwargs):
+        # For POST requests, delete directly without showing confirmation
+        self.object = self.get_object()
+        website_name = self.object.name
+        success_url = self.get_success_url()
+        
+        # Delete the website and all related data
+        self.object.delete()
+        
+        messages.success(request, f"Website '{website_name}' and all its data have been deleted successfully!")
+        return HttpResponseRedirect(success_url)
 
 
 class FeedListView(LoginRequiredMixin, ListView):
@@ -222,13 +242,41 @@ class ArticleDetailView(LoginRequiredMixin, DetailView):
 
 @login_required
 def home_view(request):
+    from django.conf import settings
+    from datetime import timedelta
+    
+    # Get scheduled websites info
+    scheduled_websites = Website.objects.filter(
+        active=True, 
+        auto_fetch_enabled=True
+    ).order_by('last_auto_fetch')
+    
+    websites_due_soon = []
+    for website in scheduled_websites[:10]:
+        if website.last_auto_fetch:
+            next_fetch = website.last_auto_fetch + timedelta(minutes=website.fetch_interval_minutes)
+            websites_due_soon.append({
+                'website': website,
+                'next_fetch': next_fetch,
+                'is_overdue': timezone.now() > next_fetch
+            })
+        else:
+            websites_due_soon.append({
+                'website': website,
+                'next_fetch': None,
+                'is_overdue': True
+            })
+    
     context = {
         'website_count': Website.objects.filter(active=True).count(),
         'feed_count': Feed.objects.filter(active=True).count(),
         'article_count': Article.objects.count(),
+        'scheduled_website_count': scheduled_websites.count(),
+        'websites_due_soon': websites_due_soon,
         'recent_articles': Article.objects.select_related('feed', 'feed__website')[:10],
         'recent_fetch_logs': FetchLog.objects.select_related('feed', 'feed__website')[:10],
         'feeds_with_errors': Feed.objects.filter(error_count__gt=0, active=True).select_related('website')[:5],
+        'claude_enabled': bool(settings.ANTHROPIC_API_KEY),
     }
     return render(request, 'feeds/home.html', context)
 
@@ -249,7 +297,9 @@ def discover_feeds(request, pk):
     website = get_object_or_404(Website, pk=pk)
     if request.method == 'POST':
         # Trigger async task to discover feeds
-        discover_feeds_for_website.delay(website.id)
+        task = discover_feeds_for_website.delay(website.id)
+        # Store task ID in session for progress tracking
+        request.session[f'discover_task_{pk}'] = task.id
         messages.success(request, f"Feed discovery initiated for '{website.name}'!")
         return redirect('feeds:website-detail', pk=pk)
     return redirect('feeds:website-detail', pk=pk)
@@ -323,6 +373,116 @@ def feed_stats_api(request):
         })
     
     return JsonResponse(stats)
+
+
+@login_required
+def discover_progress_api(request, pk):
+    """
+    API endpoint to get the current feed discovery progress for a website.
+    Returns JSON with progress information.
+    """
+    from celery.result import AsyncResult
+    
+    website = get_object_or_404(Website, pk=pk)
+    task_id = request.session.get(f'discover_task_{pk}')
+    
+    if not task_id:
+        return JsonResponse({
+            'in_progress': False,
+            'status': 'No discovery task found',
+            'feeds_found': website.feeds.count()
+        })
+    
+    task = AsyncResult(task_id)
+    
+    response_data = {
+        'in_progress': not task.ready(),
+        'status': task.state,
+        'feeds_found': website.feeds.count()
+    }
+    
+    if task.successful():
+        response_data['result'] = str(task.result)
+        response_data['status'] = 'completed'
+        # Clear the task from session
+        del request.session[f'discover_task_{pk}']
+    elif task.failed():
+        response_data['error'] = str(task.info)
+        response_data['status'] = 'failed'
+        # Clear the task from session
+        del request.session[f'discover_task_{pk}']
+    elif task.state == 'PENDING':
+        response_data['status'] = 'pending'
+    elif task.state == 'PROGRESS':
+        response_data['current'] = task.info.get('current', 0)
+        response_data['total'] = task.info.get('total', 0)
+        response_data['status'] = task.info.get('status', 'Processing...')
+    
+    return JsonResponse(response_data)
+
+
+@login_required
+def fetch_progress_api(request, pk):
+    """
+    API endpoint to get the current fetch progress for a website.
+    Returns JSON with progress information.
+    """
+    website = get_object_or_404(Website, pk=pk)
+    
+    # Get total feeds for the website
+    total_feeds = website.feeds.filter(active=True).count()
+    
+    if total_feeds == 0:
+        return JsonResponse({
+            'in_progress': False,
+            'message': 'No active feeds'
+        })
+    
+    # Check recent fetch logs (last 10 minutes)
+    from datetime import timedelta
+    recent_cutoff = timezone.now() - timedelta(minutes=10)
+    
+    recent_logs = FetchLog.objects.filter(
+        feed__website=website,
+        started_at__gte=recent_cutoff
+    )
+    
+    # Count completed and in-progress fetches
+    completed_count = recent_logs.filter(completed_at__isnull=False).count()
+    in_progress_count = recent_logs.filter(completed_at__isnull=True).count()
+    
+    # Check if fetch is still active
+    very_recent_cutoff = timezone.now() - timedelta(seconds=30)
+    very_recent_logs = recent_logs.filter(started_at__gte=very_recent_cutoff)
+    
+    is_active = very_recent_logs.exists() or in_progress_count > 0
+    
+    # Calculate progress percentage
+    if completed_count + in_progress_count > 0:
+        # Use the actual progress based on recent logs
+        progress_feeds = completed_count + in_progress_count
+        # Don't exceed total feeds
+        progress_feeds = min(progress_feeds, total_feeds)
+        percentage = (completed_count / total_feeds) * 100
+    else:
+        progress_feeds = 0
+        percentage = 0
+    
+    # Get recent article count
+    recent_articles = Article.objects.filter(
+        feed__website=website,
+        fetched_at__gte=recent_cutoff
+    ).count()
+    
+    return JsonResponse({
+        'in_progress': is_active,
+        'total_feeds': total_feeds,
+        'completed_feeds': completed_count,
+        'in_progress_feeds': in_progress_count,
+        'percentage': round(percentage, 1),
+        'recent_articles': recent_articles,
+        'message': f'Processing {in_progress_count} feeds...' if is_active else 'Fetch complete'
+    })
 
 
 def logout_view(request):

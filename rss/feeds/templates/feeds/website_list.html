@@ -23,6 +23,7 @@
             <th>Name</th>
             <th>URL</th>
             <th>Status</th>
+            <th>Auto-Fetch</th>
             <th>Feeds</th>
             <th>Articles</th>
             <th>Actions</th>
@@ -44,11 +45,24 @@
                     <span class="badge badge-danger">Inactive</span>
                 {% endif %}
             </td>
+            <td>
+                {% if website.auto_fetch_enabled %}
+                    <span class="badge badge-info" title="{{ website.get_fetch_interval_minutes_display }}">
+                        {{ website.fetch_interval_minutes }} min
+                    </span>
+                {% else %}
+                    <span class="badge badge-secondary">Off</span>
+                {% endif %}
+            </td>
             <td>{{ website.feed_count }}</td>
             <td>{{ website.article_count }}</td>
             <td>
                 <a href="{% url 'feeds:website-detail' website.pk %}" class="btn btn-sm">View</a>
                 <a href="{% url 'feeds:website-edit' website.pk %}" class="btn btn-sm btn-secondary">Edit</a>
+                <form method="post" action="{% url 'feeds:website-delete' website.pk %}" style="display: inline;" onsubmit="return confirmDelete('{{ website.name }}', {{ website.feed_count }}, {{ website.article_count }})">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                </form>
             </td>
         </tr>
         {% empty %}
@@ -76,4 +90,11 @@
     {% endif %}
 </div>
 {% endif %}
+
+<script>
+function confirmDelete(websiteName, feedCount, articleCount) {
+    const message = `Are you sure you want to delete "${websiteName}"?\n\nThis will permanently delete:\n- ${feedCount} feeds\n- ${articleCount} articles\n\nThis action cannot be undone.`;
+    return confirm(message);
+}
+</script>
 {% endblock %}
