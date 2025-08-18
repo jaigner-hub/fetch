@@ -33,6 +33,10 @@ urlpatterns = [
     path('analysis/article/<int:pk>/analyze/', views.analyze_article_view, name='analyze-article'),
     path('analysis/batch/', views.batch_analyze_view, name='batch-analyze'),
     
+    # Topic and Category filtering
+    path('articles/topic/<str:topic>/', views.ArticlesByTopicView.as_view(), name='articles-by-topic'),
+    path('articles/category/<str:category>/', views.ArticlesByCategoryView.as_view(), name='articles-by-category'),
+    
     # Generated Content URLs
     path('content/', views.GeneratedContentListView.as_view(), name='generated-content-list'),
     path('content/generate/', views.GenerateContentView.as_view(), name='generate-content'),

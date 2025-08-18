@@ -1,0 +1,147 @@
+{% extends 'feeds/base.html' %}
+{% load feed_filters %}
+
+{% block title %}Articles about {{ topic }} - RSS Feed Aggregator{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="{% url 'feeds:analysis-dashboard' %}">Analysis Dashboard</a> /
+    Articles by Topic
+</div>
+
+<div class="topic-header">
+    <h2>Articles about "{{ topic }}"</h2>
+    <p class="subtitle">Found {{ total_count }} article{{ total_count|pluralize }} with this topic</p>
+</div>
+
+<div class="articles-section">
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>Website</th>
+                <th>Published</th>
+                <th>Summary</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for article in articles %}
+            <tr>
+                <td>
+                    <a href="{% url 'feeds:article-detail' article.pk %}">
+                        {{ article.title|truncatechars:60 }}
+                    </a>
+                </td>
+                <td>{{ article.feed.website.name }}</td>
+                <td>
+                    {% if article.published_date %}
+                        {{ article.published_date|date:"M d, Y" }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td>
+                    {% if article.analysis %}
+                        {{ article.analysis.ai_summary|extract_json_summary|truncatechars:100 }}
+                    {% else %}
+                        {{ article.summary|truncatechars:100|default:"" }}
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="{% url 'feeds:article-analysis-detail' article.pk %}" class="btn btn-sm">Analysis</a>
+                    <a href="{{ article.url }}" target="_blank" class="btn btn-sm btn-secondary">Original</a>
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5" class="text-center">No articles found with this topic</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    {% if is_paginated %}
+    <div class="pagination">
+        {% if page_obj.has_previous %}
+            <a href="?page=1" class="btn btn-sm">First</a>
+            <a href="?page={{ page_obj.previous_page_number }}" class="btn btn-sm">Previous</a>
+        {% endif %}
+        
+        <span class="current-page">
+            Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+        </span>
+        
+        {% if page_obj.has_next %}
+            <a href="?page={{ page_obj.next_page_number }}" class="btn btn-sm">Next</a>
+            <a href="?page={{ page_obj.paginator.num_pages }}" class="btn btn-sm">Last</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.topic-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 2rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+}
+
+.topic-header h2 {
+    margin-bottom: 0.5rem;
+}
+
+.subtitle {
+    opacity: 0.9;
+    font-size: 1.1rem;
+}
+
+.articles-section {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.data-table th {
+    text-align: left;
+    padding: 0.75rem;
+    background: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+    font-weight: 600;
+}
+
+.data-table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.data-table tr:hover {
+    background: #f8f9fa;
+}
+
+.text-center {
+    text-align: center;
+}
+
+.pagination {
+    margin-top: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.current-page {
+    padding: 0.5rem 1rem;
+    background: #f8f9fa;
+    border-radius: 4px;
+}
+</style>
+{% endblock %}

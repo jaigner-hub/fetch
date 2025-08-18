@@ -10,6 +10,7 @@ from django.http import JsonResponse
 from django.db.models import Count, Q, Max, Exists, OuterRef
 from django.utils import timezone
 from datetime import timedelta
+from urllib.parse import unquote
 from .models import Website, Feed, Article, FetchLog, ArticleAnalysis, GeneratedContent
 from .tasks import fetch_feed_content, discover_feeds_for_website, fetch_all_website_content, analyze_article_async
 from .article_analyzer import ArticleAnalyzer, ContentGenerator
@@ -239,6 +240,62 @@ class ArticleDetailView(LoginRequiredMixin, DetailView):
     model = Article
     template_name = 'feeds/article_detail.html'
     context_object_name = 'article'
+
+
+class ArticlesByTopicView(LoginRequiredMixin, ListView):
+    """View to show all articles with a specific topic."""
+    model = Article
+    template_name = 'feeds/articles_by_topic.html'
+    context_object_name = 'articles'
+    paginate_by = 25
+    
+    def get_queryset(self):
+        # Decode the topic from URL
+        topic = unquote(self.kwargs['topic'])
+        
+        # Get articles with this topic in their analysis
+        queryset = Article.objects.filter(
+            analysis__topics__icontains=topic
+        ).select_related(
+            'feed__website', 'analysis'
+        ).order_by('-published_date')
+        
+        return queryset
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['topic'] = unquote(self.kwargs['topic'])
+        context['total_count'] = self.get_queryset().count()
+        return context
+
+
+class ArticlesByCategoryView(LoginRequiredMixin, ListView):
+    """View to show all articles with a specific feed category/tag."""
+    model = Article
+    template_name = 'feeds/articles_by_category.html'
+    context_object_name = 'articles'
+    paginate_by = 25
+    
+    def get_queryset(self):
+        # Decode the category from URL
+        category = unquote(self.kwargs['category'])
+        
+        # Get articles with this category in their tags
+        # Check both the tags field and raw_data.tags
+        queryset = Article.objects.filter(
+            Q(tags__icontains=category) |
+            Q(raw_data__tags__icontains=category)
+        ).select_related(
+            'feed__website'
+        ).order_by('-published_date')
+        
+        return queryset
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['category'] = unquote(self.kwargs['category'])
+        context['total_count'] = self.get_queryset().count()
+        return context
 
 
 @login_required

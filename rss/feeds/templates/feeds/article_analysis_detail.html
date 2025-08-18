@@ -41,7 +41,7 @@
         {% if analysis.topics %}
         <div class="tag-list">
             {% for topic in analysis.topics %}
-            <span class="tag">{{ topic }}</span>
+            <a href="{% url 'feeds:articles-by-topic' topic=topic %}" class="tag tag-link">{{ topic }}</a>
             {% endfor %}
         </div>
         {% else %}
@@ -54,7 +54,7 @@
             <h4 style="font-size: 0.9rem; color: #666; margin-bottom: 0.5rem;">Feed Categories:</h4>
             <div class="tag-list">
                 {% for tag in article.tags %}
-                <span class="tag tag-small" style="background: #f0f0f0; color: #333;">{{ tag|extract_tag_term }}</span>
+                <a href="{% url 'feeds:articles-by-category' category=tag|extract_tag_term %}" class="tag tag-small tag-category-link">{{ tag|extract_tag_term }}</a>
                 {% endfor %}
             </div>
         </div>
@@ -63,7 +63,7 @@
             <h4 style="font-size: 0.9rem; color: #666; margin-bottom: 0.5rem;">Feed Categories:</h4>
             <div class="tag-list">
                 {% for tag in article.raw_data.tags %}
-                <span class="tag tag-small" style="background: #f0f0f0; color: #333;">{{ tag|extract_tag_term }}</span>
+                <a href="{% url 'feeds:articles-by-category' category=tag|extract_tag_term %}" class="tag tag-small tag-category-link">{{ tag|extract_tag_term }}</a>
                 {% endfor %}
             </div>
         </div>
@@ -300,6 +300,33 @@
 .tag-small {
     padding: 0.3rem 0.6rem;
     font-size: 0.85rem;
+}
+
+.tag-link {
+    text-decoration: none;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.tag-link:hover {
+    background: #2980b9;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+.tag-category-link {
+    background: #f0f0f0;
+    color: #333;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.tag-category-link:hover {
+    background: #e0e0e0;
+    color: #000;
+    transform: translateY(-2px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .sentiment {
