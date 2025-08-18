@@ -43,9 +43,11 @@
                 </td>
                 <td>
                     {% if article.analysis %}
-                        {{ article.analysis.ai_summary|extract_json_summary|truncatechars:100 }}
+                        {{ article.analysis.ai_summary|extract_json_summary|clean_html_content|truncatechars:100 }}
+                    {% elif article.summary %}
+                        {{ article.summary|clean_html_content|truncatechars:100 }}
                     {% else %}
-                        {{ article.summary|truncatechars:100|default:"" }}
+                        -
                     {% endif %}
                 </td>
                 <td>

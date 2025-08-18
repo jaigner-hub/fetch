@@ -41,7 +41,13 @@
                         -
                     {% endif %}
                 </td>
-                <td>{{ article.summary|truncatechars:100|default:"" }}</td>
+                <td>
+                    {% if article.summary %}
+                        {{ article.summary|clean_html_content|truncatechars:100 }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
                 <td>
                     <a href="{% url 'feeds:article-analysis-detail' article.pk %}" class="btn btn-sm">Analysis</a>
                     <a href="{{ article.url }}" target="_blank" class="btn btn-sm btn-secondary">Original</a>

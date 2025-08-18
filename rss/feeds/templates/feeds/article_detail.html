@@ -1,5 +1,6 @@
 {% extends 'feeds/base.html' %}
 {% load feed_extras %}
+{% load feed_filters %}
 
 {% block title %}{{ article.title }} - RSS Feed Aggregator{% endblock %}
 
@@ -19,7 +20,11 @@
 <div style="margin-bottom: 2rem;">
     <h3>Summary</h3>
     <div style="padding: 1rem; background: #f8f9fa; border-radius: 4px;">
-        {{ article.summary|linebreaks }}
+        {% if '<' in article.summary %}
+            {{ article.summary|clean_html_content|linebreaks }}
+        {% else %}
+            {{ article.summary|linebreaks }}
+        {% endif %}
     </div>
 </div>
 {% endif %}
