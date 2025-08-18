@@ -1,4 +1,5 @@
 {% extends "feeds/base.html" %}
+{% load feed_filters %}
 
 {% block title %}Article Analysis Dashboard - RSS Aggregator{% endblock %}
 
@@ -164,7 +165,7 @@
             </h4>
             <p class="meta">
                 Analyzed {{ analysis.analyzed_at|timesince }} ago |
-                Topics: {{ analysis.topics|join:", "|default:"None" }}
+                Topics: {{ analysis.topics|join_tag_terms }}
             </p>
             <p class="summary">{{ analysis.ai_summary|truncatechars:150 }}</p>
         </div>

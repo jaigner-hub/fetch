@@ -584,9 +584,41 @@ class ArticleAnalysisDetailView(LoginRequiredMixin, DetailView):
         # Get or create analysis
         if hasattr(self.object, 'analysis'):
             context['analysis'] = self.object.analysis
-            context['similar_articles'] = self.object.analysis.similar_articles.select_related(
+            
+            # First try to get similar articles from the analysis
+            similar_from_analysis = self.object.analysis.similar_articles.select_related(
                 'feed__website'
-            ).all()[:10]
+            ).all()[:5]
+            
+            # Also use the similarity detector for better matches
+            from .similarity_detector import SimilarityDetector
+            detector = SimilarityDetector()
+            similar_detected = detector.find_similar_articles(
+                self.object,
+                threshold=0.5,
+                max_results=10,
+                days_back=30
+            )
+            
+            # Combine both sources (avoiding duplicates)
+            seen_ids = set()
+            similar_articles = []
+            
+            # Add articles from analysis first
+            for article in similar_from_analysis:
+                if article.id not in seen_ids and article.id != self.object.id:
+                    similar_articles.append(article)
+                    seen_ids.add(article.id)
+            
+            # Add detected similar articles
+            for article, scores in similar_detected:
+                if article.id not in seen_ids and article.id != self.object.id:
+                    similar_articles.append(article)
+                    seen_ids.add(article.id)
+                    if len(similar_articles) >= 10:
+                        break
+            
+            context['similar_articles'] = similar_articles
         else:
             context['analysis'] = None
             context['similar_articles'] = []

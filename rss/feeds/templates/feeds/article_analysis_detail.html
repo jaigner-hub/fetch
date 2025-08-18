@@ -1,4 +1,5 @@
 {% extends "feeds/base.html" %}
+{% load feed_filters %}
 
 {% block title %}Article Analysis - {{ article.title|truncatechars:50 }}{% endblock %}
 
@@ -48,12 +49,21 @@
         {% endif %}
         
         <!-- Tags from feed -->
-        {% if article.raw_data.tags %}
+        {% if article.tags %}
+        <div style="margin-top: 1rem;">
+            <h4 style="font-size: 0.9rem; color: #666; margin-bottom: 0.5rem;">Feed Categories:</h4>
+            <div class="tag-list">
+                {% for tag in article.tags %}
+                <span class="tag tag-small" style="background: #f0f0f0; color: #333;">{{ tag|extract_tag_term }}</span>
+                {% endfor %}
+            </div>
+        </div>
+        {% elif article.raw_data.tags %}
         <div style="margin-top: 1rem;">
             <h4 style="font-size: 0.9rem; color: #666; margin-bottom: 0.5rem;">Feed Categories:</h4>
             <div class="tag-list">
                 {% for tag in article.raw_data.tags %}
-                <span class="tag tag-small" style="background: #f0f0f0; color: #333;">{{ tag }}</span>
+                <span class="tag tag-small" style="background: #f0f0f0; color: #333;">{{ tag|extract_tag_term }}</span>
                 {% endfor %}
             </div>
         </div>
