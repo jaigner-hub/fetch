@@ -196,6 +196,8 @@ Please respond in JSON format. Extract actual entity names from the article:
                     
                     extracted_summary = ""
                     extracted_topics = []
+                    extracted_keywords = []
+                    extracted_sentiment = "neutral"
                     extracted_entities = {"people": [], "organizations": [], "locations": []}
                     
                     if summary_match:
@@ -208,6 +210,19 @@ Please respond in JSON format. Extract actual entity names from the article:
                         topics_str = topics_match[0]
                         topic_matches = re.findall(r'"([^"]+)"', topics_str)
                         extracted_topics = topic_matches[:5]  # Limit to 5 topics
+                    
+                    # Try to extract keywords
+                    keywords_match = re.search(r'"keywords"\s*:\s*\[([^\]]*)\]', result_text)
+                    if keywords_match and keywords_match.group(1):
+                        keyword_matches = re.findall(r'"([^"]+)"', keywords_match.group(1))
+                        extracted_keywords = keyword_matches[:10]  # Limit to 10 keywords
+                    
+                    # Try to extract sentiment
+                    sentiment_match = re.search(r'"sentiment"\s*:\s*"([^"]*)"', result_text)
+                    if sentiment_match:
+                        extracted_sentiment = sentiment_match.group(1).lower()
+                        if extracted_sentiment not in ['positive', 'negative', 'neutral']:
+                            extracted_sentiment = 'neutral'
                     
                     # Try to extract entities
                     people_match = re.search(r'"people"\s*:\s*\[([^\]]*)\]', result_text)
@@ -233,8 +248,8 @@ Please respond in JSON format. Extract actual entity names from the article:
                         "summary": extracted_summary,
                         "topics": extracted_topics,
                         "entities": extracted_entities,
-                        "sentiment": "neutral",
-                        "keywords": []
+                        "sentiment": extracted_sentiment,
+                        "keywords": extracted_keywords
                     }
             else:
                 # No JSON found at all - use article's existing data
