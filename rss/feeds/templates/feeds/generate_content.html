@@ -94,12 +94,63 @@
     
     <div class="source-selection">
         <h3>Select Source Articles</h3>
-        <p>Choose 2-5 articles to use as sources for content generation. Articles should be related for best results.</p>
+        <p>Choose 2-5 related articles from the same topic to generate cohesive content.</p>
         
         <div class="selection-stats">
             <span id="selected-count">0</span> articles selected
         </div>
         
+        {% if source_article %}
+        <div class="source-article-info">
+            <h4>Finding articles similar to:</h4>
+            <div class="highlight-box">
+                <strong>{{ source_article.title }}</strong><br>
+                <small>{{ source_article.feed.website.name }} - {{ source_article.published_date|date:"M d, Y" }}</small>
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if article_groups %}
+        {% for group in article_groups %}
+        <div class="topic-group">
+            <h4 class="topic-header">
+                <span class="topic-icon">📚</span>
+                {{ group.topic }}
+                <span class="article-count">({{ group.articles|length }} articles)</span>
+            </h4>
+            
+            <div class="articles-list">
+                {% for article in group.articles %}
+                <div class="article-select-item">
+                    <input type="checkbox" name="article_ids" value="{{ article.id }}" 
+                           id="article-{{ article.id }}" class="article-checkbox"
+                           {% if source_article and article.id == source_article.id %}checked{% endif %}>
+                    <label for="article-{{ article.id }}">
+                        <div class="article-info">
+                            <h5>{{ article.title|truncatechars:80 }}</h5>
+                            <div class="article-meta">
+                                <span>{{ article.feed.website.name }}</span> |
+                                <span>{{ article.published_date|date:"M d, Y" }}</span>
+                                {% if article.analysis and article.analysis.topics %}
+                                | Topics: 
+                                {% for topic in article.analysis.topics|slice:":3" %}
+                                    <span class="topic-tag">{{ topic }}</span>
+                                {% endfor %}
+                                {% endif %}
+                            </div>
+                            {% if article.analysis %}
+                            <p class="article-summary">{{ article.analysis.ai_summary|truncatechars:150 }}</p>
+                            {% endif %}
+                        </div>
+                    </label>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+        
+        {% else %}
+        <!-- Fallback to flat list if no groups -->
         <div class="articles-list">
             {% for article in available_articles %}
             <div class="article-select-item">
@@ -130,6 +181,7 @@
             </div>
             {% endfor %}
         </div>
+        {% endif %}
     </div>
     
     <div class="form-actions">
@@ -479,6 +531,65 @@ function generateContent(event) {
 
 .checkbox-label input[type="checkbox"] {
     margin-right: 0.5rem;
+}
+
+/* Topic Groups Styling */
+.topic-group {
+    margin-bottom: 2rem;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.topic-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 1rem 1.5rem;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    font-size: 1.1rem;
+}
+
+.topic-icon {
+    margin-right: 0.5rem;
+    font-size: 1.2rem;
+}
+
+.article-count {
+    margin-left: auto;
+    font-size: 0.9rem;
+    opacity: 0.9;
+    font-weight: normal;
+}
+
+.topic-group .articles-list {
+    border: 1px solid #e0e0e0;
+    border-top: none;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.source-article-info {
+    margin-bottom: 1.5rem;
+}
+
+.highlight-box {
+    background: #fff3cd;
+    border: 2px solid #ffc107;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-top: 0.5rem;
+}
+
+.highlight-box strong {
+    color: #856404;
+}
+
+.article-info h5 {
+    margin-bottom: 0.5rem;
+    color: #2c3e50;
+    font-size: 1rem;
 }
 </style>
 {% endblock %}

@@ -109,6 +109,12 @@ class Article(models.Model):
                                   help_text="Hash of content to detect updates")
     raw_data = models.JSONField(default=dict, blank=True, 
                                help_text="Original raw data from feed")
+    tags = models.JSONField(default=list, blank=True,
+                          help_text="Categories/tags from the feed")
+    images = models.JSONField(default=list, blank=True,
+                           help_text="Images found in the article")
+    featured_image = models.URLField(max_length=2048, blank=True,
+                                   help_text="Main/featured image URL")
     additional_feeds = models.ManyToManyField(Feed, blank=True, 
                                              related_name='cross_posted_articles',
                                              help_text="Other feeds where this article appeared")

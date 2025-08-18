@@ -174,7 +174,10 @@ def fetch_feed_content(feed_id):
                                 summary=article_data['summary'],
                                 author=article_data['author'],
                                 published_date=article_data['published_date'],
-                                raw_data=article_data.get('raw_data', {})
+                                raw_data=article_data.get('raw_data', {}),
+                                tags=article_data.get('tags', []),
+                                images=article_data.get('images', []),
+                                featured_image=article_data.get('featured_image', '')
                             )
                             new_articles += 1
                             logger.info(f"Created new article: {article.title}")
@@ -464,6 +467,23 @@ def fetch_sitemap_content(feed_id):
                         if pub_date:
                             safe_metadata['published_date'] = pub_date.isoformat()
                         
+                        # Extract featured image from metadata
+                        featured_img = metadata.get('image', '')
+                        
+                        # Extract images from content
+                        imgs = []
+                        if article_content:
+                            from bs4 import BeautifulSoup
+                            soup = BeautifulSoup(article_content, 'html.parser')
+                            for img in soup.find_all('img'):
+                                img_url = img.get('src', '')
+                                if img_url:
+                                    imgs.append({
+                                        'url': img_url,
+                                        'alt': img.get('alt', ''),
+                                        'title': img.get('title', '')
+                                    })
+                        
                         article = Article.objects.create(
                             feed=feed,
                             url=url,
@@ -472,7 +492,10 @@ def fetch_sitemap_content(feed_id):
                             summary=metadata.get('description', '')[:500],
                             author=metadata.get('author', ''),
                             published_date=pub_date,
-                            raw_data=safe_metadata
+                            raw_data=safe_metadata,
+                            tags=[],  # Sitemap doesn't provide tags
+                            images=imgs,
+                            featured_image=featured_img
                         )
                         new_articles += 1
                         logger.info(f"Created article from sitemap: {article.title}")

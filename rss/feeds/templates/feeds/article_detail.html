@@ -24,6 +24,30 @@
 </div>
 {% endif %}
 
+<!-- Display Tags/Categories from Feed -->
+{% if article.raw_data.tags %}
+<div style="margin-bottom: 2rem;">
+    <h3>Categories</h3>
+    <div style="padding: 0.5rem 0;">
+        {% for tag in article.raw_data.tags %}
+        <span style="display: inline-block; padding: 0.25rem 0.75rem; background: #3498db; color: white; border-radius: 15px; margin-right: 0.5rem; margin-bottom: 0.5rem; font-size: 0.9rem;">{{ tag }}</span>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Display Featured Image if available -->
+{% if article.raw_data.enclosures %}
+{% for enclosure in article.raw_data.enclosures %}
+    {% if enclosure.type and 'image' in enclosure.type %}
+    <div style="margin-bottom: 2rem;">
+        <h3>Featured Image</h3>
+        <img src="{{ enclosure.href }}" alt="{{ article.title }}" style="max-width: 100%; height: auto; border-radius: 8px;">
+    </div>
+    {% endif %}
+{% endfor %}
+{% endif %}
+
 {% if article.content %}
 <div style="margin-bottom: 2rem;">
     <h3>Content</h3>

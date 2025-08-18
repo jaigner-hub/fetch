@@ -691,16 +691,110 @@ class GenerateContentView(LoginRequiredMixin, CreateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         
-        # Get recent analyzed articles
-        context['available_articles'] = Article.objects.filter(
-            analysis__isnull=False
-        ).select_related(
-            'feed__website', 'analysis'
-        ).order_by('-published_date')[:50]
+        # Get article ID from URL parameters if provided
+        source_article_id = self.request.GET.get('source')
+        
+        if source_article_id:
+            # If a source article is specified, find similar articles
+            try:
+                source_article = Article.objects.get(id=source_article_id)
+                context['source_article'] = source_article
+                
+                # Use similarity detector to find related articles
+                from feeds.similarity_detector import SimilarityDetector
+                detector = SimilarityDetector()
+                
+                similar = detector.find_similar_articles(
+                    source_article,
+                    threshold=0.4,  # Lower threshold to get more related articles
+                    max_results=30,
+                    days_back=30
+                )
+                
+                # Extract just the articles
+                related_articles = [article for article, scores in similar]
+                
+                # Also add the source article at the beginning
+                context['available_articles'] = [source_article] + related_articles
+                context['article_groups'] = [{
+                    'topic': f"Articles related to: {source_article.title[:60]}",
+                    'articles': context['available_articles']
+                }]
+                
+            except Article.DoesNotExist:
+                # Fallback to topic grouping
+                context['article_groups'] = self.get_topic_grouped_articles()
+        else:
+            # Group articles by topics
+            context['article_groups'] = self.get_topic_grouped_articles()
         
         context['style_choices'] = GeneratedContent.STYLE_CHOICES
         
         return context
+    
+    def get_topic_grouped_articles(self):
+        """Group analyzed articles by their topics."""
+        from collections import defaultdict
+        from datetime import timedelta
+        
+        # Get recent analyzed articles
+        recent_date = timezone.now() - timedelta(days=7)
+        analyzed_articles = Article.objects.filter(
+            analysis__isnull=False,
+            published_date__gte=recent_date
+        ).select_related(
+            'feed__website', 'analysis'
+        ).order_by('-published_date')[:200]
+        
+        # Group by topics
+        topic_groups = defaultdict(list)
+        articles_without_topics = []
+        
+        for article in analyzed_articles:
+            if hasattr(article, 'analysis') and article.analysis.topics:
+                # Use the first topic as the main grouping
+                main_topic = article.analysis.topics[0] if article.analysis.topics else None
+                if main_topic:
+                    topic_groups[main_topic].append(article)
+                else:
+                    articles_without_topics.append(article)
+            else:
+                articles_without_topics.append(article)
+        
+        # Convert to list of dicts for template
+        grouped_articles = []
+        
+        # Sort topics by number of articles (most articles first)
+        sorted_topics = sorted(topic_groups.items(), key=lambda x: len(x[1]), reverse=True)
+        
+        for topic, articles in sorted_topics[:10]:  # Limit to top 10 topics
+            if len(articles) >= 2:  # Only show topics with at least 2 articles
+                grouped_articles.append({
+                    'topic': topic.title() if topic else 'Uncategorized',
+                    'articles': articles[:10]  # Limit articles per topic
+                })
+        
+        # Add uncategorized articles if any
+        if articles_without_topics and len(articles_without_topics) >= 2:
+            grouped_articles.append({
+                'topic': 'Other Recent Articles',
+                'articles': articles_without_topics[:10]
+            })
+        
+        # If no good grouping, just return recent articles as one group
+        if not grouped_articles:
+            recent_articles = Article.objects.filter(
+                analysis__isnull=False
+            ).select_related(
+                'feed__website', 'analysis'
+            ).order_by('-published_date')[:30]
+            
+            grouped_articles = [{
+                'topic': 'Recent Analyzed Articles',
+                'articles': list(recent_articles)
+            }]
+        
+        return grouped_articles
     
     def post(self, request, *args, **kwargs):
         article_ids = request.POST.getlist('article_ids')

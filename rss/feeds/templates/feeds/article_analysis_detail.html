@@ -36,7 +36,7 @@
 
     <!-- Topics -->
     <div class="analysis-card">
-        <h3>Topics</h3>
+        <h3>Topics & Categories</h3>
         {% if analysis.topics %}
         <div class="tag-list">
             {% for topic in analysis.topics %}
@@ -45,6 +45,18 @@
         </div>
         {% else %}
         <p class="text-muted">No topics identified</p>
+        {% endif %}
+        
+        <!-- Tags from feed -->
+        {% if article.raw_data.tags %}
+        <div style="margin-top: 1rem;">
+            <h4 style="font-size: 0.9rem; color: #666; margin-bottom: 0.5rem;">Feed Categories:</h4>
+            <div class="tag-list">
+                {% for tag in article.raw_data.tags %}
+                <span class="tag tag-small" style="background: #f0f0f0; color: #333;">{{ tag }}</span>
+                {% endfor %}
+            </div>
+        </div>
         {% endif %}
     </div>
 

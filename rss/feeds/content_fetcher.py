@@ -165,6 +165,72 @@ class ContentFetcher:
             if hasattr(entry, 'tags'):
                 tags = [tag.get('term', '') for tag in entry.tags if tag.get('term')]
             
+            # Extract images
+            images = []
+            featured_image = ''
+            
+            # Check for media content in feed
+            if hasattr(entry, 'media_content'):
+                for media in entry.media_content:
+                    if media.get('type', '').startswith('image'):
+                        images.append({
+                            'url': media.get('url', ''),
+                            'type': media.get('type', ''),
+                            'width': media.get('width', ''),
+                            'height': media.get('height', '')
+                        })
+            
+            # Check for media thumbnail
+            if hasattr(entry, 'media_thumbnail'):
+                for thumb in entry.media_thumbnail:
+                    featured_image = thumb.get('url', '')
+                    break
+            
+            # Check for enclosures (common for images/media)
+            if hasattr(entry, 'enclosures'):
+                for enclosure in entry.enclosures:
+                    if enclosure.get('type', '').startswith('image'):
+                        img_url = enclosure.get('href', '')
+                        if img_url and not featured_image:
+                            featured_image = img_url
+                        images.append({
+                            'url': img_url,
+                            'type': enclosure.get('type', ''),
+                            'length': enclosure.get('length', '')
+                        })
+            
+            # Extract images from content if we have it
+            if content:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(content, 'html.parser')
+                for img in soup.find_all('img'):
+                    img_url = img.get('src', '')
+                    if img_url:
+                        # Make URL absolute if it's relative
+                        if not img_url.startswith(('http://', 'https://')):
+                            from urllib.parse import urljoin
+                            img_url = urljoin(article_url, img_url)
+                        
+                        images.append({
+                            'url': img_url,
+                            'alt': img.get('alt', ''),
+                            'title': img.get('title', ''),
+                            'width': img.get('width', ''),
+                            'height': img.get('height', '')
+                        })
+                        
+                        # Use first image as featured if not set
+                        if not featured_image:
+                            featured_image = img_url
+            
+            # Remove duplicate images
+            seen_urls = set()
+            unique_images = []
+            for img in images:
+                if img['url'] and img['url'] not in seen_urls:
+                    seen_urls.add(img['url'])
+                    unique_images.append(img)
+            
             return {
                 'url': article_url,
                 'title': title,
@@ -174,6 +240,8 @@ class ContentFetcher:
                 'published_date': published_date,
                 'content_hash': content_hash,
                 'tags': tags,
+                'images': unique_images,
+                'featured_image': featured_image,
                 'raw_data': dict(entry)  # Store original data
             }
             
