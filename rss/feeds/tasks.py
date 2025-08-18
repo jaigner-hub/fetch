@@ -676,10 +676,26 @@ def analyze_article_async(self, article_id, find_similar=True):
         )
         
         # Create analysis record
+        # Ensure summary is not JSON
+        summary = result.get('summary', '')
+        if isinstance(summary, str) and summary.strip().startswith('{'):
+            # Try to extract from JSON if it's still JSON
+            import re
+            match = re.search(r'"summary"\s*:\s*"([^"]*)', summary)
+            if match:
+                summary = match.group(1).replace('\\n', '\n').replace('\\"', '"')
+            else:
+                summary = article.summary or article.title
+        
+        # Ensure topics is a list
+        topics = result.get('topics', [])
+        if not isinstance(topics, list):
+            topics = []
+        
         analysis = ArticleAnalysis.objects.create(
             article=article,
-            ai_summary=result.get('summary', ''),
-            topics=result.get('topics', []),
+            ai_summary=summary,
+            topics=topics,
             entities=result.get('entities', {}),
             sentiment=result.get('sentiment', 'neutral'),
             keywords=result.get('keywords', [])

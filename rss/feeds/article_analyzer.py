@@ -187,18 +187,39 @@ Please respond in JSON format:
                     result = json.loads(json_str)
                 except json.JSONDecodeError as e:
                     logger.warning(f"Failed to parse JSON in extract_summary: {e}")
-                    # Fallback if JSON parsing fails
+                    # Try to extract values from malformed JSON using regex
+                    summary_match = re.search(r'"summary"\s*:\s*"([^"]*)', result_text)
+                    topics_match = re.findall(r'"topics"\s*:\s*\[([^\]]*)\]', result_text)
+                    
+                    extracted_summary = ""
+                    extracted_topics = []
+                    
+                    if summary_match:
+                        extracted_summary = summary_match.group(1)
+                        # Unescape JSON string
+                        extracted_summary = extracted_summary.replace('\\n', '\n').replace('\\"', '"').replace('\\\\', '\\')
+                    
+                    if topics_match and topics_match[0]:
+                        # Extract topics from the JSON array string
+                        topics_str = topics_match[0]
+                        topic_matches = re.findall(r'"([^"]+)"', topics_str)
+                        extracted_topics = topic_matches[:5]  # Limit to 5 topics
+                    
+                    # If we couldn't extract a summary, use the article's existing summary or title
+                    if not extracted_summary:
+                        extracted_summary = article.summary or article.title
+                    
                     result = {
-                        "summary": result_text[:200],
-                        "topics": [],
+                        "summary": extracted_summary,
+                        "topics": extracted_topics,
                         "entities": {"people": [], "organizations": [], "locations": []},
                         "sentiment": "neutral",
                         "keywords": []
                     }
             else:
-                # Fallback if JSON parsing fails
+                # No JSON found at all - use article's existing data
                 result = {
-                    "summary": result_text[:200],
+                    "summary": article.summary or article.title,
                     "topics": [],
                     "entities": {"people": [], "organizations": [], "locations": []},
                     "sentiment": "neutral",
