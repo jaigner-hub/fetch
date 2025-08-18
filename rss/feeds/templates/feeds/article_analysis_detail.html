@@ -1,0 +1,398 @@
+{% extends "feeds/base.html" %}
+
+{% block title %}Article Analysis - {{ article.title|truncatechars:50 }}{% endblock %}
+
+{% block content %}
+{% include "feeds/components/progress_modal.html" %}
+<div class="breadcrumb">
+    <a href="{% url 'feeds:analysis-dashboard' %}">Analysis Dashboard</a> /
+    <a href="{% url 'feeds:article-list' %}">Articles</a> /
+    Analysis
+</div>
+
+<div class="article-header">
+    <h2>{{ article.title }}</h2>
+    <div class="article-meta">
+        <span>{{ article.feed.website.name }}</span> |
+        <span>{{ article.published_date|date:"F d, Y H:i" }}</span> |
+        <a href="{{ article.url }}" target="_blank" class="btn btn-sm">View Original</a>
+    </div>
+</div>
+
+{% if not analysis %}
+<div class="alert alert-info">
+    <h3>Article Not Analyzed</h3>
+    <p>This article has not been analyzed yet.</p>
+    <button onclick="analyzeArticle({{ article.pk }})" class="btn btn-primary">Analyze Now</button>
+</div>
+{% else %}
+
+<div class="analysis-grid">
+    <!-- Analysis Summary -->
+    <div class="analysis-card">
+        <h3>AI Summary</h3>
+        <p>{{ analysis.ai_summary|default:"No summary available" }}</p>
+    </div>
+
+    <!-- Topics -->
+    <div class="analysis-card">
+        <h3>Topics</h3>
+        {% if analysis.topics %}
+        <div class="tag-list">
+            {% for topic in analysis.topics %}
+            <span class="tag">{{ topic }}</span>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted">No topics identified</p>
+        {% endif %}
+    </div>
+
+    <!-- Sentiment -->
+    <div class="analysis-card">
+        <h3>Sentiment Analysis</h3>
+        <div class="sentiment sentiment-{{ analysis.sentiment }}">
+            {{ analysis.sentiment|title }}
+        </div>
+    </div>
+
+    <!-- Keywords -->
+    <div class="analysis-card">
+        <h3>SEO Keywords</h3>
+        {% if analysis.keywords %}
+        <div class="tag-list">
+            {% for keyword in analysis.keywords %}
+            <span class="tag tag-small">{{ keyword }}</span>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="text-muted">No keywords identified</p>
+        {% endif %}
+    </div>
+
+    <!-- Entities -->
+    {% if analysis.entities %}
+    <div class="analysis-card full-width">
+        <h3>Named Entities</h3>
+        <div class="entities-grid">
+            {% if analysis.entities.people %}
+            <div class="entity-group">
+                <h4>People</h4>
+                <ul>
+                    {% for person in analysis.entities.people %}
+                    <li>{{ person }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            
+            {% if analysis.entities.organizations %}
+            <div class="entity-group">
+                <h4>Organizations</h4>
+                <ul>
+                    {% for org in analysis.entities.organizations %}
+                    <li>{{ org }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            
+            {% if analysis.entities.locations %}
+            <div class="entity-group">
+                <h4>Locations</h4>
+                <ul>
+                    {% for location in analysis.entities.locations %}
+                    <li>{{ location }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Duplicate Status -->
+    {% if analysis.duplicate_of %}
+    <div class="analysis-card full-width alert-warning">
+        <h3>⚠️ Duplicate Content Detected</h3>
+        <p>This article appears to be a duplicate of:</p>
+        <div class="duplicate-info">
+            <a href="{% url 'feeds:article-detail' analysis.duplicate_of.pk %}">
+                {{ analysis.duplicate_of.title }}
+            </a>
+            <p class="meta">
+                From {{ analysis.duplicate_of.feed.website.name }} |
+                Published {{ analysis.duplicate_of.published_date|date:"F d, Y" }}
+            </p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Similar Articles -->
+{% if similar_articles %}
+<div class="similar-section">
+    <h3>Similar Articles</h3>
+    <div class="similar-articles">
+        {% for similar in similar_articles %}
+        <div class="similar-item">
+            <h4>
+                <a href="{% url 'feeds:article-detail' similar.pk %}">
+                    {{ similar.title|truncatechars:80 }}
+                </a>
+            </h4>
+            <p class="meta">
+                {{ similar.feed.website.name }} |
+                {{ similar.published_date|date:"M d, Y" }}
+            </p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Article Content -->
+<div class="article-content-section">
+    <h3>Article Content</h3>
+    <div class="article-content">
+        {% if article.content %}
+            {{ article.content|truncatechars:1000|linebreaks }}
+            <p><a href="{% url 'feeds:article-detail' article.pk %}">Read full article...</a></p>
+        {% else %}
+            <p>{{ article.summary|default:"No content available" }}</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Actions -->
+<div class="actions-bar">
+    <a href="{% url 'feeds:generate-content' %}?source={{ article.pk }}" class="btn btn-primary">
+        Use in Content Generation
+    </a>
+    <button onclick="analyzeArticle({{ article.pk }})" class="btn">
+        Re-analyze
+    </button>
+    <a href="{% url 'feeds:article-detail' article.pk %}" class="btn">
+        View Article Details
+    </a>
+</div>
+
+<div class="analysis-meta">
+    <p>Analyzed: {{ analysis.analyzed_at|date:"F d, Y H:i" }}</p>
+    {% if analysis.updated_at != analysis.analyzed_at %}
+    <p>Updated: {{ analysis.updated_at|date:"F d, Y H:i" }}</p>
+    {% endif %}
+</div>
+
+{% endif %}
+
+<style>
+.breadcrumb {
+    margin-bottom: 1rem;
+    color: #666;
+}
+
+.breadcrumb a {
+    color: #3498db;
+    text-decoration: none;
+}
+
+.article-header {
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #ecf0f1;
+}
+
+.article-header h2 {
+    margin-bottom: 0.5rem;
+}
+
+.article-meta {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.alert {
+    padding: 1.5rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+}
+
+.alert-info {
+    background: #d1ecf1;
+    border: 1px solid #bee5eb;
+    color: #0c5460;
+}
+
+.alert-warning {
+    background: #fff3cd;
+    border: 1px solid #ffeeba;
+    color: #856404;
+}
+
+.analysis-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.analysis-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.analysis-card.full-width {
+    grid-column: 1 / -1;
+}
+
+.analysis-card h3 {
+    margin-bottom: 1rem;
+    color: #2c3e50;
+}
+
+.tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.tag {
+    display: inline-block;
+    padding: 0.4rem 0.8rem;
+    background: #3498db;
+    color: white;
+    border-radius: 20px;
+    font-size: 0.9rem;
+}
+
+.tag-small {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.85rem;
+}
+
+.sentiment {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-weight: 500;
+    font-size: 1.1rem;
+}
+
+.sentiment-positive {
+    background: #d4edda;
+    color: #155724;
+}
+
+.sentiment-negative {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.sentiment-neutral {
+    background: #e2e3e5;
+    color: #383d41;
+}
+
+.entities-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+}
+
+.entity-group h4 {
+    color: #666;
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+}
+
+.entity-group ul {
+    list-style: none;
+}
+
+.entity-group li {
+    padding: 0.25rem 0;
+    color: #333;
+}
+
+.duplicate-info {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: white;
+    border-radius: 4px;
+}
+
+.similar-section {
+    margin-top: 2rem;
+}
+
+.similar-articles {
+    display: grid;
+    gap: 1rem;
+}
+
+.similar-item {
+    background: white;
+    padding: 1rem;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.similar-item h4 {
+    margin-bottom: 0.5rem;
+}
+
+.article-content-section {
+    margin-top: 2rem;
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+}
+
+.article-content {
+    color: #333;
+    line-height: 1.6;
+}
+
+.actions-bar {
+    margin-top: 2rem;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    display: flex;
+    gap: 1rem;
+}
+
+.analysis-meta {
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid #ecf0f1;
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.text-muted {
+    color: #6c757d;
+}
+</style>
+
+<script>
+function analyzeArticle(articleId) {
+    if (window.progressModal) {
+        progressModal.analyzeArticle(articleId, function(result) {
+            // Reload the page to show updated analysis
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
+        });
+    } else {
+        // Fallback to regular link if modal not loaded
+        window.location.href = `/analysis/article/${articleId}/analyze/`;
+    }
+}
+</script>
+{% endblock %}

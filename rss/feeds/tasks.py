@@ -6,9 +6,10 @@ from django.utils import timezone
 from django.db import transaction
 import logging
 
-from .models import Website, Feed, Article, FetchLog
+from .models import Website, Feed, Article, FetchLog, ArticleAnalysis, GeneratedContent
 from .feed_discovery import FeedDiscoverer
 from .content_fetcher import ContentFetcher
+from .article_analyzer import ArticleAnalyzer, ContentGenerator
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -116,8 +117,19 @@ def fetch_feed_content(feed_id):
         
         logger.info(f"Starting content fetch for feed: {feed.feed_url}")
         
-        # Create fetch log
-        fetch_log = FetchLog.objects.create(feed=feed)
+        # Get or create fetch log (may already exist if created by fetch_all_website_content)
+        # Look for a recent incomplete fetch log
+        from datetime import timedelta
+        recent_cutoff = timezone.now() - timedelta(minutes=5)
+        fetch_log = FetchLog.objects.filter(
+            feed=feed,
+            started_at__gte=recent_cutoff,
+            completed_at__isnull=True
+        ).first()
+        
+        if not fetch_log:
+            # Create new fetch log if none exists
+            fetch_log = FetchLog.objects.create(feed=feed)
         
         fetcher = ContentFetcher()
         
@@ -314,6 +326,12 @@ def fetch_all_website_content(website_id):
         
         logger.info(f"Processing {total_rss} RSS/ATOM feeds and {total_sitemaps} sitemaps for {website.name}")
         
+        # Create FetchLog entries immediately for progress tracking
+        # This ensures the frontend can detect that fetching is in progress
+        for feed in rss_feeds:
+            FetchLog.objects.create(feed=feed)
+            logger.info(f"Created FetchLog for: {feed.title or feed.feed_url}")
+        
         # Queue fetch tasks for RSS/ATOM feeds
         queued_rss_tasks = 0
         for feed in rss_feeds:
@@ -321,12 +339,12 @@ def fetch_all_website_content(website_id):
             queued_rss_tasks += 1
             logger.info(f"Queued RSS/ATOM fetch task for: {feed.title or feed.feed_url}")
         
-        # Queue fetch tasks for sitemap feeds
+        # Skip sitemap processing for now - they're too slow
         queued_sitemap_tasks = 0
-        for sitemap_feed in sitemap_feeds:
-            fetch_sitemap_content.delay(sitemap_feed.id)
-            queued_sitemap_tasks += 1
-            logger.info(f"Queued sitemap fetch task for: {sitemap_feed.feed_url}")
+        # for sitemap_feed in sitemap_feeds:
+        #     fetch_sitemap_content.delay(sitemap_feed.id)
+        #     queued_sitemap_tasks += 1
+        #     logger.info(f"Queued sitemap fetch task for: {sitemap_feed.feed_url}")
         
         return f"Queued {queued_rss_tasks} RSS/ATOM and {queued_sitemap_tasks} sitemap fetch tasks for {website.name}"
         
@@ -592,3 +610,212 @@ def cleanup_old_logs(days=30):
     
     logger.info(f"Deleted {deleted_count} old fetch logs")
     return f"Deleted {deleted_count} old fetch logs"
+
+
+@shared_task(bind=True)
+def analyze_article_async(self, article_id, find_similar=True):
+    """
+    Analyze an article asynchronously using Claude AI with progress tracking.
+    
+    Args:
+        article_id: ID of the Article to analyze
+        find_similar: Whether to find similar articles
+    """
+    try:
+        # Update progress: Starting
+        self.update_state(
+            state='PROGRESS',
+            meta={'current': 0, 'total': 100, 'status': 'Loading article...'}
+        )
+        
+        article = Article.objects.get(id=article_id)
+        
+        # Check if already analyzed
+        if hasattr(article, 'analysis'):
+            logger.info(f"Article {article_id} already analyzed")
+            return "Article already analyzed"
+        
+        # Update progress: Analyzing
+        self.update_state(
+            state='PROGRESS',
+            meta={'current': 20, 'total': 100, 'status': 'Analyzing content with AI...'}
+        )
+        
+        analyzer = ArticleAnalyzer()
+        
+        # Extract summary and topics
+        result = analyzer.extract_summary_and_topics(article)
+        
+        # Update progress: Creating analysis
+        self.update_state(
+            state='PROGRESS',
+            meta={'current': 50, 'total': 100, 'status': 'Saving analysis results...'}
+        )
+        
+        # Create analysis record
+        analysis = ArticleAnalysis.objects.create(
+            article=article,
+            ai_summary=result.get('summary', ''),
+            topics=result.get('topics', []),
+            entities=result.get('entities', {}),
+            sentiment=result.get('sentiment', 'neutral'),
+            keywords=result.get('keywords', [])
+        )
+        
+        # Find similar articles if requested
+        if find_similar:
+            # Update progress: Finding similar
+            self.update_state(
+                state='PROGRESS',
+                meta={'current': 70, 'total': 100, 'status': 'Finding similar articles...'}
+            )
+            
+            similar = analyzer.find_similar_articles(article, threshold=0.7)
+            for similar_article, score in similar[:10]:
+                analysis.similar_articles.add(similar_article)
+                logger.info(f"Found similar article: {similar_article.title[:50]} (score: {score:.2f})")
+            
+            # Update progress: Checking duplicates
+            self.update_state(
+                state='PROGRESS',
+                meta={'current': 90, 'total': 100, 'status': 'Checking for duplicates...'}
+            )
+            
+            # Check for duplicates
+            duplicate = analyzer.check_duplicate_content(article)
+            if duplicate:
+                analysis.duplicate_of = duplicate
+                analysis.save()
+                logger.info(f"Article is duplicate of: {duplicate.title[:50]}")
+        
+        # Update progress: Complete
+        self.update_state(
+            state='PROGRESS',
+            meta={'current': 100, 'total': 100, 'status': 'Analysis complete!'}
+        )
+        
+        logger.info(f"Successfully analyzed article {article_id}")
+        return f"Article analyzed successfully"
+        
+    except Article.DoesNotExist:
+        logger.error(f"Article {article_id} not found")
+        return f"Article not found"
+    except Exception as e:
+        logger.error(f"Error analyzing article {article_id}: {e}")
+        return f"Error: {str(e)}"
+
+
+@shared_task(bind=True)
+def generate_content_async(self, source_article_ids, style='news', target_length=800):
+    """
+    Generate new content asynchronously from source articles with progress tracking.
+    
+    Args:
+        source_article_ids: List of Article IDs to use as sources
+        style: Writing style (news, blog, analysis, summary)
+        target_length: Target word count
+    """
+    try:
+        # Update progress: Starting
+        self.update_state(
+            state='PROGRESS',
+            meta={'current': 0, 'total': 100, 'status': 'Loading source articles...'}
+        )
+        
+        # Get source articles
+        source_articles = Article.objects.filter(id__in=source_article_ids)
+        
+        if not source_articles.exists():
+            logger.error("No valid source articles found")
+            return "No valid source articles"
+        
+        # Update progress: Preparing
+        self.update_state(
+            state='PROGRESS',
+            meta={'current': 20, 'total': 100, 'status': f'Preparing {source_articles.count()} source articles...'}
+        )
+        
+        generator = ContentGenerator()
+        
+        # Update progress: Generating
+        self.update_state(
+            state='PROGRESS',
+            meta={'current': 40, 'total': 100, 'status': 'Generating content with AI...'}
+        )
+        
+        # Generate content
+        result = generator.generate_article(
+            source_articles=list(source_articles),
+            style=style,
+            target_length=target_length
+        )
+        
+        # Update progress: Saving
+        self.update_state(
+            state='PROGRESS',
+            meta={'current': 80, 'total': 100, 'status': 'Saving generated content...'}
+        )
+        
+        # Save generated content
+        generated = GeneratedContent.objects.create(
+            title=result.get('title', 'Generated Article'),
+            subtitle=result.get('subtitle', ''),
+            content=result.get('content', ''),
+            summary=result.get('summary', ''),
+            style=style,
+            topics=result.get('topics', []),
+            media_items=result.get('media_items', []),
+            web_sources=result.get('web_sources', []),
+            generation_params={
+                'style': style,
+                'target_length': target_length,
+                'source_count': source_articles.count()
+            }
+        )
+        
+        # Add source articles
+        generated.source_articles.set(source_articles)
+        
+        # Update progress: Complete
+        self.update_state(
+            state='PROGRESS',
+            meta={'current': 100, 'total': 100, 'status': 'Content generated successfully!', 'content_id': generated.id}
+        )
+        
+        logger.info(f"Successfully generated content: {generated.title[:50]}")
+        return f"Content generated successfully: ID {generated.id}"
+        
+    except Exception as e:
+        logger.error(f"Error generating content: {e}")
+        return f"Error: {str(e)}"
+
+
+@shared_task
+def batch_analyze_recent_articles(hours=24, limit=50):
+    """
+    Batch analyze recent articles that haven't been analyzed yet.
+    
+    Args:
+        hours: Look back period in hours
+        limit: Maximum number of articles to analyze
+    """
+    from datetime import timedelta
+    
+    since_date = timezone.now() - timedelta(hours=hours)
+    
+    # Get unanalyzed articles
+    articles = Article.objects.filter(
+        fetched_at__gte=since_date,
+        analysis__isnull=True
+    )[:limit]
+    
+    analyzed_count = 0
+    for article in articles:
+        try:
+            analyze_article_async.delay(article.id)
+            analyzed_count += 1
+        except Exception as e:
+            logger.error(f"Error queuing analysis for article {article.id}: {e}")
+    
+    logger.info(f"Queued {analyzed_count} articles for analysis")
+    return f"Queued {analyzed_count} articles for analysis"

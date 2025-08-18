@@ -1,17 +1,18 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.http import HttpResponseRedirect
 from django.views.generic import ListView, DetailView, CreateView, UpdateView, DeleteView
-from django.urls import reverse_lazy
+from django.urls import reverse_lazy, reverse
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import logout
 from django.http import JsonResponse
-from django.db.models import Count, Q, Max
+from django.db.models import Count, Q, Max, Exists, OuterRef
 from django.utils import timezone
 from datetime import timedelta
-from .models import Website, Feed, Article, FetchLog
-from .tasks import fetch_feed_content, discover_feeds_for_website, fetch_all_website_content
+from .models import Website, Feed, Article, FetchLog, ArticleAnalysis, GeneratedContent
+from .tasks import fetch_feed_content, discover_feeds_for_website, fetch_all_website_content, analyze_article_async
+from .article_analyzer import ArticleAnalyzer, ContentGenerator
 
 
 class WebsiteListView(LoginRequiredMixin, ListView):
@@ -490,3 +491,310 @@ def logout_view(request):
     logout(request)
     messages.success(request, "You have been successfully logged out.")
     return redirect('login')
+
+
+# Article Analysis Views
+class AnalysisDashboardView(LoginRequiredMixin, ListView):
+    """Dashboard showing article analysis overview."""
+    model = Article
+    template_name = 'feeds/analysis_dashboard.html'
+    context_object_name = 'recent_articles'
+    paginate_by = 20
+    
+    def get_queryset(self):
+        queryset = Article.objects.select_related(
+            'feed', 'feed__website', 'analysis'
+        ).annotate(
+            has_analysis=Exists(
+                ArticleAnalysis.objects.filter(article=OuterRef('pk'))
+            )
+        )
+        
+        # Filter options
+        filter_type = self.request.GET.get('filter', 'all')
+        if filter_type == 'analyzed':
+            queryset = queryset.filter(has_analysis=True)
+        elif filter_type == 'unanalyzed':
+            queryset = queryset.filter(has_analysis=False)
+        elif filter_type == 'duplicates':
+            queryset = queryset.filter(
+                analysis__duplicate_of__isnull=False
+            )
+        
+        # Search
+        search = self.request.GET.get('search', '')
+        if search:
+            queryset = queryset.filter(
+                Q(title__icontains=search) |
+                Q(feed__website__name__icontains=search)
+            )
+        
+        # Date filter
+        days = self.request.GET.get('days', '7')
+        if days.isdigit():
+            since_date = timezone.now() - timedelta(days=int(days))
+            queryset = queryset.filter(fetched_at__gte=since_date)
+        
+        return queryset.order_by('-published_date')
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        
+        # Statistics
+        total_articles = Article.objects.count()
+        analyzed_count = ArticleAnalysis.objects.count()
+        duplicate_count = ArticleAnalysis.objects.filter(
+            duplicate_of__isnull=False
+        ).count()
+        generated_count = GeneratedContent.objects.count()
+        
+        context['stats'] = {
+            'total_articles': total_articles,
+            'analyzed_count': analyzed_count,
+            'analysis_percentage': (analyzed_count / total_articles * 100) if total_articles > 0 else 0,
+            'duplicate_count': duplicate_count,
+            'generated_count': generated_count,
+        }
+        
+        # Recent analyses
+        context['recent_analyses'] = ArticleAnalysis.objects.select_related(
+            'article', 'article__feed__website'
+        ).order_by('-analyzed_at')[:5]
+        
+        # Recent generated content
+        context['recent_generated'] = GeneratedContent.objects.order_by(
+            '-generated_at'
+        )[:5]
+        
+        # Get websites for batch analysis form
+        context['websites'] = Website.objects.filter(active=True).order_by('name')
+        
+        return context
+
+
+class ArticleAnalysisDetailView(LoginRequiredMixin, DetailView):
+    """Detailed view of article analysis."""
+    model = Article
+    template_name = 'feeds/article_analysis_detail.html'
+    context_object_name = 'article'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        
+        # Get or create analysis
+        if hasattr(self.object, 'analysis'):
+            context['analysis'] = self.object.analysis
+            context['similar_articles'] = self.object.analysis.similar_articles.select_related(
+                'feed__website'
+            ).all()[:10]
+        else:
+            context['analysis'] = None
+            context['similar_articles'] = []
+        
+        return context
+
+
+@login_required
+def analyze_article_view(request, pk):
+    """Trigger article analysis."""
+    article = get_object_or_404(Article, pk=pk)
+    
+    if hasattr(article, 'analysis'):
+        messages.info(request, "Article has already been analyzed.")
+    else:
+        # Queue for analysis
+        analyze_article_async.delay(article.id, find_similar=True)
+        messages.success(request, "Article queued for analysis. This may take a moment.")
+    
+    return redirect('feeds:article-analysis-detail', pk=article.pk)
+
+
+@login_required
+def batch_analyze_view(request):
+    """Batch analyze multiple articles."""
+    if request.method == 'POST':
+        website_id = request.POST.get('website_id')
+        days = int(request.POST.get('days', 7))
+        limit = int(request.POST.get('limit', 10))
+        
+        # Get articles to analyze
+        queryset = Article.objects.filter(
+            analysis__isnull=True,
+            fetched_at__gte=timezone.now() - timedelta(days=days)
+        )
+        
+        if website_id:
+            queryset = queryset.filter(feed__website_id=website_id)
+        
+        articles = queryset[:limit]
+        
+        # Queue for analysis
+        count = 0
+        for article in articles:
+            analyze_article_async.delay(article.id, find_similar=True)
+            count += 1
+        
+        messages.success(request, f"Queued {count} articles for analysis.")
+        
+    return redirect('feeds:analysis-dashboard')
+
+
+class GeneratedContentListView(LoginRequiredMixin, ListView):
+    """List view for generated content."""
+    model = GeneratedContent
+    template_name = 'feeds/generated_content_list.html'
+    context_object_name = 'content_list'
+    paginate_by = 20
+    
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        
+        # Filter by status
+        status = self.request.GET.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
+        
+        # Filter by style
+        style = self.request.GET.get('style')
+        if style:
+            queryset = queryset.filter(style=style)
+        
+        return queryset.order_by('-generated_at')
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['status_choices'] = GeneratedContent.STATUS_CHOICES
+        context['style_choices'] = GeneratedContent.STYLE_CHOICES
+        return context
+
+
+class GeneratedContentDetailView(LoginRequiredMixin, DetailView):
+    """Detail view for generated content."""
+    model = GeneratedContent
+    template_name = 'feeds/generated_content_detail.html'
+    context_object_name = 'content'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['source_articles'] = self.object.source_articles.select_related(
+            'feed__website'
+        ).all()
+        return context
+
+
+class GenerateContentView(LoginRequiredMixin, CreateView):
+    """View to generate new content from selected articles."""
+    model = GeneratedContent
+    template_name = 'feeds/generate_content.html'
+    fields = []
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        
+        # Get recent analyzed articles
+        context['available_articles'] = Article.objects.filter(
+            analysis__isnull=False
+        ).select_related(
+            'feed__website', 'analysis'
+        ).order_by('-published_date')[:50]
+        
+        context['style_choices'] = GeneratedContent.STYLE_CHOICES
+        
+        return context
+    
+    def post(self, request, *args, **kwargs):
+        article_ids = request.POST.getlist('article_ids')
+        style = request.POST.get('style', 'news')
+        target_length = int(request.POST.get('target_length', 800))
+        
+        # Keygrip-specific parameters
+        use_keygrip = request.POST.get('use_keygrip') == 'on'
+        voice_prompt_id = request.POST.get('voice_prompt_id', 'product_writer')
+        use_writing_samples = request.POST.get('use_writing_samples') == 'on'
+        use_web_search = request.POST.get('use_web_search') == 'on'
+        
+        if not article_ids:
+            messages.error(request, "Please select at least one article.")
+            return redirect('feeds:generate-content')
+        
+        # Get articles
+        articles = Article.objects.filter(id__in=article_ids)
+        
+        if not articles.exists():
+            messages.error(request, "No valid articles selected.")
+            return redirect('feeds:generate-content')
+        
+        # Generate content
+        generator = ContentGenerator()
+        
+        try:
+            if use_keygrip:
+                # Use Keygrip for generation
+                result = generator.generate_with_keygrip(
+                    source_articles=list(articles),
+                    voice_prompt_id=voice_prompt_id,
+                    use_writing_samples=use_writing_samples,
+                    use_web_search=use_web_search
+                )
+            else:
+                # Use Claude for generation
+                result = generator.generate_article(
+                    source_articles=list(articles),
+                    style=style,
+                    target_length=target_length
+                )
+            
+            # Save generated content
+            generated = GeneratedContent.objects.create(
+                title=result.get('title', 'Generated Article'),
+                subtitle=result.get('subtitle', ''),
+                content=result.get('content', ''),
+                summary=result.get('summary', ''),
+                style=style if not use_keygrip else voice_prompt_id,
+                topics=result.get('topics', []),
+                media_items=result.get('media_items', []),
+                generation_params={
+                    'style': style if not use_keygrip else voice_prompt_id,
+                    'target_length': target_length,
+                    'source_count': articles.count(),
+                    'generation_method': result.get('generation_method', 'claude'),
+                    'use_keygrip': use_keygrip,
+                    'voice_prompt_id': voice_prompt_id if use_keygrip else None,
+                    'use_writing_samples': use_writing_samples if use_keygrip else None,
+                    'use_web_search': use_web_search if use_keygrip else None
+                }
+            )
+            
+            # Add source articles
+            generated.source_articles.set(articles)
+            
+            # Add web sources if available
+            if 'web_sources' in result and result['web_sources']:
+                generated.web_sources = result['web_sources']
+                generated.save()
+            
+            messages.success(request, "Content generated successfully!")
+            return redirect('feeds:generated-content-detail', pk=generated.pk)
+            
+        except Exception as e:
+            messages.error(request, f"Error generating content: {str(e)}")
+            return redirect('feeds:generate-content')
+
+
+@login_required
+def update_content_status(request, pk):
+    """Update the status of generated content."""
+    content = get_object_or_404(GeneratedContent, pk=pk)
+    
+    if request.method == 'POST':
+        new_status = request.POST.get('status')
+        if new_status in dict(GeneratedContent.STATUS_CHOICES):
+            content.status = new_status
+            if new_status == 'published':
+                content.published_at = timezone.now()
+            content.save()
+            messages.success(request, f"Content status updated to {new_status}.")
+        else:
+            messages.error(request, "Invalid status.")
+    
+    return redirect('feeds:generated-content-detail', pk=content.pk)

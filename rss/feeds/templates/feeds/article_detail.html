@@ -1,4 +1,5 @@
 {% extends 'feeds/base.html' %}
+{% load feed_extras %}
 
 {% block title %}{{ article.title }} - RSS Feed Aggregator{% endblock %}
 
@@ -26,10 +27,94 @@
 {% if article.content %}
 <div style="margin-bottom: 2rem;">
     <h3>Content</h3>
-    <div style="padding: 1rem; background: #f8f9fa; border-radius: 4px; max-height: 600px; overflow-y: auto;">
-        {{ article.content|linebreaks }}
+    <div class="article-content" style="padding: 1rem; background: #f8f9fa; border-radius: 4px; max-height: 600px; overflow-y: auto;">
+        {{ article.content|clean_html }}
     </div>
 </div>
+
+<style>
+.article-content {
+    font-family: Georgia, serif;
+    line-height: 1.6;
+}
+
+.article-content img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 1rem auto;
+}
+
+.article-content a {
+    color: #0066cc;
+    text-decoration: underline;
+}
+
+.article-content a:hover {
+    color: #0052a3;
+}
+
+.article-content blockquote {
+    border-left: 4px solid #ccc;
+    margin: 1rem 0;
+    padding-left: 1rem;
+    font-style: italic;
+}
+
+.article-content h1, .article-content h2, 
+.article-content h3, .article-content h4, 
+.article-content h5, .article-content h6 {
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.article-content ul, .article-content ol {
+    margin: 1rem 0;
+    padding-left: 2rem;
+}
+
+.article-content p {
+    margin-bottom: 1rem;
+}
+
+.article-content iframe {
+    max-width: 100%;
+    margin: 1rem auto;
+    display: block;
+}
+
+.article-content video {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 1rem auto;
+}
+
+.article-content figure {
+    margin: 1rem 0;
+    text-align: center;
+}
+
+.article-content figcaption {
+    font-size: 0.9em;
+    color: #666;
+    margin-top: 0.5rem;
+}
+
+.article-content code {
+    background: #f4f4f4;
+    padding: 0.2rem 0.4rem;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+}
+
+.article-content pre {
+    background: #f4f4f4;
+    padding: 1rem;
+    border-radius: 4px;
+    overflow-x: auto;
+}
+</style>
 {% endif %}
 
 <div style="margin-top: 2rem;">

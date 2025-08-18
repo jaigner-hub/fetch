@@ -1,0 +1,174 @@
+{
+  "feeds": [
+    {
+      "name": "Main Feed",
+      "url": "https://www.hollywoodreporter.com/feed",
+      "category": "Main"
+    },
+    {
+      "name": "Main RSS",
+      "url": "https://www.hollywoodreporter.com/rss",
+      "category": "Main"
+    },
+    {
+      "name": "Atom Feed",
+      "url": "https://www.hollywoodreporter.com/atom",
+      "category": "Main"
+    },
+    {
+      "name": "Movies - All",
+      "url": "https://www.hollywoodreporter.com/movies/feed",
+      "category": "Movies"
+    },
+    {
+      "name": "Movies - News",
+      "url": "https://www.hollywoodreporter.com/movies/movie-news/feed",
+      "category": "Movies"
+    },
+    {
+      "name": "Movies - Reviews",
+      "url": "https://www.hollywoodreporter.com/movies/movie-reviews/feed",
+      "category": "Movies"
+    },
+    {
+      "name": "Movies - Features",
+      "url": "https://www.hollywoodreporter.com/movies/movie-features/feed",
+      "category": "Movies"
+    },
+    {
+      "name": "TV - All",
+      "url": "https://www.hollywoodreporter.com/tv/feed",
+      "category": "TV"
+    },
+    {
+      "name": "TV - News",
+      "url": "https://www.hollywoodreporter.com/tv/tv-news/feed",
+      "category": "TV"
+    },
+    {
+      "name": "TV - Reviews",
+      "url": "https://www.hollywoodreporter.com/tv/tv-reviews/feed",
+      "category": "TV"
+    },
+    {
+      "name": "TV - Features",
+      "url": "https://www.hollywoodreporter.com/tv/tv-features/feed",
+      "category": "TV"
+    },
+    {
+      "name": "Business - All",
+      "url": "https://www.hollywoodreporter.com/business/feed",
+      "category": "Business"
+    },
+    {
+      "name": "Business - News",
+      "url": "https://www.hollywoodreporter.com/business/business-news/feed",
+      "category": "Business"
+    },
+    {
+      "name": "Business - Digital",
+      "url": "https://www.hollywoodreporter.com/business/digital/feed",
+      "category": "Business"
+    },
+    {
+      "name": "Tech",
+      "url": "https://www.hollywoodreporter.com/tech/feed",
+      "category": "Tech"
+    },
+    {
+      "name": "Lifestyle - All",
+      "url": "https://www.hollywoodreporter.com/lifestyle/feed",
+      "category": "Lifestyle"
+    },
+    {
+      "name": "Lifestyle - News",
+      "url": "https://www.hollywoodreporter.com/lifestyle/lifestyle-news/feed",
+      "category": "Lifestyle"
+    },
+    {
+      "name": "Lifestyle - Style",
+      "url": "https://www.hollywoodreporter.com/lifestyle/style/feed",
+      "category": "Lifestyle"
+    },
+    {
+      "name": "Lifestyle - Arts",
+      "url": "https://www.hollywoodreporter.com/lifestyle/arts/feed",
+      "category": "Lifestyle"
+    },
+    {
+      "name": "Awards",
+      "url": "https://www.hollywoodreporter.com/awards/feed",
+      "category": "Awards"
+    },
+    {
+      "name": "News",
+      "url": "https://www.hollywoodreporter.com/news/feed",
+      "category": "News"
+    },
+    {
+      "name": "Features",
+      "url": "https://www.hollywoodreporter.com/features/feed",
+      "category": "Features"
+    },
+    {
+      "name": "Reviews",
+      "url": "https://www.hollywoodreporter.com/reviews/feed",
+      "category": "Reviews"
+    },
+    {
+      "name": "Heat Vision",
+      "url": "https://www.hollywoodreporter.com/heat-vision/feed",
+      "category": "Special"
+    },
+    {
+      "name": "Live Feed",
+      "url": "https://www.hollywoodreporter.com/live-feed/feed",
+      "category": "Special"
+    },
+    {
+      "name": "Politics",
+      "url": "https://www.hollywoodreporter.com/politics/feed",
+      "category": "Politics"
+    },
+    {
+      "name": "International",
+      "url": "https://www.hollywoodreporter.com/international/feed",
+      "category": "International"
+    },
+    {
+      "name": "Asia",
+      "url": "https://www.hollywoodreporter.com/asia/feed",
+      "category": "International"
+    },
+    {
+      "name": "Lists",
+      "url": "https://www.hollywoodreporter.com/lists/feed",
+      "category": "Special"
+    },
+    {
+      "name": "Netflix",
+      "url": "https://www.hollywoodreporter.com/t/netflix/feed",
+      "category": "Studios"
+    },
+    {
+      "name": "Disney",
+      "url": "https://www.hollywoodreporter.com/t/disney/feed",
+      "category": "Studios"
+    },
+    {
+      "name": "Warner Bros",
+      "url": "https://www.hollywoodreporter.com/t/warner-bros/feed",
+      "category": "Studios"
+    },
+    {
+      "name": "Amazon",
+      "url": "https://www.hollywoodreporter.com/t/amazon/feed",
+      "category": "Studios"
+    },
+    {
+      "name": "Paramount",
+      "url": "https://www.hollywoodreporter.com/t/paramount/feed",
+      "category": "Studios"
+    }
+  ]
+}

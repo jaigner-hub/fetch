@@ -1,0 +1,143 @@
+{
+  "website": {
+    "name": "Hollywood Reporter",
+    "url": "https://www.hollywoodreporter.com"
+  },
+  "feeds": [
+    {
+      "title": "Main Feed - All Content",
+      "url": "https://www.hollywoodreporter.com/feed/",
+      "category": "main"
+    },
+    {
+      "title": "Movies - All",
+      "url": "https://www.hollywoodreporter.com/movies/feed/",
+      "category": "movies"
+    },
+    {
+      "title": "Movies - News",
+      "url": "https://www.hollywoodreporter.com/movies/movie-news/feed/",
+      "category": "movies"
+    },
+    {
+      "title": "Movies - Reviews",
+      "url": "https://www.hollywoodreporter.com/movies/movie-reviews/feed/",
+      "category": "movies"
+    },
+    {
+      "title": "Movies - Features",
+      "url": "https://www.hollywoodreporter.com/movies/movie-features/feed/",
+      "category": "movies"
+    },
+    {
+      "title": "TV - All",
+      "url": "https://www.hollywoodreporter.com/tv/feed/",
+      "category": "tv"
+    },
+    {
+      "title": "TV - News",
+      "url": "https://www.hollywoodreporter.com/tv/tv-news/feed/",
+      "category": "tv"
+    },
+    {
+      "title": "TV - Reviews",
+      "url": "https://www.hollywoodreporter.com/tv/tv-reviews/feed/",
+      "category": "tv"
+    },
+    {
+      "title": "TV - Features",
+      "url": "https://www.hollywoodreporter.com/tv/tv-features/feed/",
+      "category": "tv"
+    },
+    {
+      "title": "Business - All",
+      "url": "https://www.hollywoodreporter.com/business/feed/",
+      "category": "business"
+    },
+    {
+      "title": "Business - News",
+      "url": "https://www.hollywoodreporter.com/business/business-news/feed/",
+      "category": "business"
+    },
+    {
+      "title": "Business - Digital",
+      "url": "https://www.hollywoodreporter.com/business/digital/feed/",
+      "category": "business"
+    },
+    {
+      "title": "Lifestyle - All",
+      "url": "https://www.hollywoodreporter.com/lifestyle/feed/",
+      "category": "lifestyle"
+    },
+    {
+      "title": "Lifestyle - News",
+      "url": "https://www.hollywoodreporter.com/lifestyle/lifestyle-news/feed/",
+      "category": "lifestyle"
+    },
+    {
+      "title": "Lifestyle - Shopping",
+      "url": "https://www.hollywoodreporter.com/lifestyle/shopping/feed/",
+      "category": "lifestyle"
+    },
+    {
+      "title": "Tech - All",
+      "url": "https://www.hollywoodreporter.com/tech/feed/",
+      "category": "tech"
+    },
+    {
+      "title": "Tech - News",
+      "url": "https://www.hollywoodreporter.com/tech/tech-news/feed/",
+      "category": "tech"
+    },
+    {
+      "title": "Awards - All",
+      "url": "https://www.hollywoodreporter.com/awards/feed/",
+      "category": "awards"
+    },
+    {
+      "title": "Awards - News",
+      "url": "https://www.hollywoodreporter.com/awards/awards-news/feed/",
+      "category": "awards"
+    },
+    {
+      "title": "Politics - All",
+      "url": "https://www.hollywoodreporter.com/politics/feed/",
+      "category": "politics"
+    },
+    {
+      "title": "Politics - News",
+      "url": "https://www.hollywoodreporter.com/politics/politics-news/feed/",
+      "category": "politics"
+    },
+    {
+      "title": "Heat Vision (Comics & Superhero)",
+      "url": "https://www.hollywoodreporter.com/heat-vision/feed/",
+      "category": "special"
+    },
+    {
+      "title": "Live Feed (Breaking News)",
+      "url": "https://www.hollywoodreporter.com/live-feed/feed/",
+      "category": "special"
+    },
+    {
+      "title": "Gallery",
+      "url": "https://www.hollywoodreporter.com/gallery/feed/",
+      "category": "special"
+    },
+    {
+      "title": "Lists",
+      "url": "https://www.hollywoodreporter.com/lists/feed/",
+      "category": "special"
+    },
+    {
+      "title": "News",
+      "url": "https://www.hollywoodreporter.com/news/feed/",
+      "category": "news"
+    },
+    {
+      "title": "Tags",
+      "url": "https://www.hollywoodreporter.com/tag/feed/",
+      "category": "special"
+    }
+  ]
+}

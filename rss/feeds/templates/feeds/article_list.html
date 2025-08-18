@@ -56,6 +56,7 @@
             <td>{{ article.published_date|date:"Y-m-d H:i"|default:article.fetched_at|date:"Y-m-d H:i" }}</td>
             <td>
                 <a href="{% url 'feeds:article-detail' article.pk %}" class="btn btn-sm">View</a>
+                <a href="{% url 'feeds:article-analysis-detail' article.pk %}" class="btn btn-sm">Analysis</a>
                 <a href="{{ article.url }}" target="_blank" class="btn btn-sm btn-secondary">Original</a>
             </td>
         </tr>

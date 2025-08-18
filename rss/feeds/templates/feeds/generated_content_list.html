@@ -1,0 +1,308 @@
+{% extends "feeds/base.html" %}
+
+{% block title %}Generated Content - RSS Aggregator{% endblock %}
+
+{% block content %}
+<div class="content-header">
+    <h2>Generated Content</h2>
+    <div class="actions">
+        <a href="{% url 'feeds:generate-content' %}" class="btn btn-primary">Generate New Content</a>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="filters">
+    <form method="get" class="filter-form">
+        <select name="status" onchange="this.form.submit()">
+            <option value="">All Status</option>
+            {% for value, label in status_choices %}
+            <option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        
+        <select name="style" onchange="this.form.submit()">
+            <option value="">All Styles</option>
+            {% for value, label in style_choices %}
+            <option value="{{ value }}" {% if request.GET.style == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        
+        <button type="submit" class="btn btn-sm">Apply Filters</button>
+    </form>
+</div>
+
+<!-- Content List -->
+<div class="content-grid">
+    {% for content in content_list %}
+    <div class="content-card status-{{ content.status }}">
+        <div class="content-status">
+            <span class="badge badge-{{ content.status }}">{{ content.get_status_display }}</span>
+            <span class="content-style">{{ content.get_style_display }}</span>
+        </div>
+        
+        <h3>
+            <a href="{% url 'feeds:generated-content-detail' content.pk %}">
+                {{ content.title }}
+            </a>
+        </h3>
+        
+        {% if content.subtitle %}
+        <p class="subtitle">{{ content.subtitle }}</p>
+        {% endif %}
+        
+        <p class="summary">{{ content.summary|truncatechars:200 }}</p>
+        
+        <div class="content-meta">
+            <div class="meta-item">
+                <strong>Generated:</strong> {{ content.generated_at|date:"M d, Y H:i" }}
+            </div>
+            <div class="meta-item">
+                <strong>Sources:</strong> {{ content.source_articles.count }} articles
+            </div>
+            {% if content.topics %}
+            <div class="meta-item">
+                <strong>Topics:</strong>
+                {% for topic in content.topics|slice:":3" %}
+                <span class="topic-tag">{{ topic }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        
+        <div class="content-actions">
+            <a href="{% url 'feeds:generated-content-detail' content.pk %}" class="btn btn-sm">View</a>
+            {% if content.status == 'draft' %}
+            <form method="post" action="{% url 'feeds:update-content-status' content.pk %}" style="display: inline;">
+                {% csrf_token %}
+                <input type="hidden" name="status" value="review">
+                <button type="submit" class="btn btn-sm">Mark for Review</button>
+            </form>
+            {% elif content.status == 'review' %}
+            <form method="post" action="{% url 'feeds:update-content-status' content.pk %}" style="display: inline;">
+                {% csrf_token %}
+                <input type="hidden" name="status" value="published">
+                <button type="submit" class="btn btn-sm btn-success">Publish</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+    {% empty %}
+    <div class="no-content">
+        <h3>No Generated Content Yet</h3>
+        <p>Start by analyzing some articles and then generate new content.</p>
+        <a href="{% url 'feeds:generate-content' %}" class="btn btn-primary">Generate Your First Content</a>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Pagination -->
+{% if is_paginated %}
+<div class="pagination">
+    {% if page_obj.has_previous %}
+        <a href="?page=1{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.style %}&style={{ request.GET.style }}{% endif %}" class="btn btn-sm">First</a>
+        <a href="?page={{ page_obj.previous_page_number }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.style %}&style={{ request.GET.style }}{% endif %}" class="btn btn-sm">Previous</a>
+    {% endif %}
+    
+    <span class="current-page">
+        Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+    </span>
+    
+    {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.style %}&style={{ request.GET.style }}{% endif %}" class="btn btn-sm">Next</a>
+        <a href="?page={{ page_obj.paginator.num_pages }}{% if request.GET.status %}&status={{ request.GET.status }}{% endif %}{% if request.GET.style %}&style={{ request.GET.style }}{% endif %}" class="btn btn-sm">Last</a>
+    {% endif %}
+</div>
+{% endif %}
+
+<style>
+.content-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
+.filters {
+    background: white;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+}
+
+.filter-form {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.filter-form select {
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.content-grid {
+    display: grid;
+    gap: 1.5rem;
+}
+
+.content-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    border-left: 4px solid #e0e0e0;
+}
+
+.content-card.status-draft {
+    border-left-color: #6c757d;
+}
+
+.content-card.status-review {
+    border-left-color: #ffc107;
+}
+
+.content-card.status-published {
+    border-left-color: #28a745;
+}
+
+.content-card.status-archived {
+    border-left-color: #dc3545;
+}
+
+.content-status {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.badge-draft {
+    background: #e2e3e5;
+    color: #383d41;
+}
+
+.badge-review {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.badge-published {
+    background: #d4edda;
+    color: #155724;
+}
+
+.badge-archived {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.content-style {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.content-card h3 {
+    margin-bottom: 0.5rem;
+}
+
+.content-card h3 a {
+    color: #2c3e50;
+    text-decoration: none;
+}
+
+.content-card h3 a:hover {
+    color: #3498db;
+}
+
+.subtitle {
+    color: #666;
+    font-style: italic;
+    margin-bottom: 1rem;
+}
+
+.summary {
+    color: #333;
+    line-height: 1.6;
+    margin-bottom: 1rem;
+}
+
+.content-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid #f0f0f0;
+}
+
+.meta-item {
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.meta-item strong {
+    color: #333;
+}
+
+.topic-tag {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    background: #3498db;
+    color: white;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    margin-left: 0.25rem;
+}
+
+.content-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn-success {
+    background: #28a745;
+    color: white;
+}
+
+.btn-success:hover {
+    background: #218838;
+}
+
+.no-content {
+    text-align: center;
+    padding: 3rem;
+    background: white;
+    border-radius: 8px;
+}
+
+.no-content h3 {
+    margin-bottom: 1rem;
+    color: #666;
+}
+
+.no-content p {
+    color: #666;
+    margin-bottom: 1.5rem;
+}
+
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 2rem;
+}
+
+.current-page {
+    color: #666;
+}
+</style>
+{% endblock %}

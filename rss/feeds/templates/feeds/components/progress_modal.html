@@ -1,0 +1,314 @@
+<!-- Progress Modal Component -->
+<div id="progressModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="progressTitle">Processing...</h3>
+        </div>
+        <div class="modal-body">
+            <div class="progress-container">
+                <div class="progress-bar" id="progressBar">
+                    <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                </div>
+                <div class="progress-text">
+                    <span id="progressPercent">0%</span>
+                    <span id="progressStatus">Initializing...</span>
+                </div>
+            </div>
+            <div id="progressError" class="error-message" style="display: none;"></div>
+        </div>
+        <div class="modal-footer">
+            <button id="progressClose" class="btn btn-secondary" style="display: none;">Close</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.modal {
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content {
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+    width: 90%;
+    max-width: 500px;
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateY(-50px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.modal-header {
+    padding: 1.5rem;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.modal-header h3 {
+    margin: 0;
+    color: #2c3e50;
+}
+
+.modal-body {
+    padding: 2rem 1.5rem;
+}
+
+.progress-container {
+    margin-bottom: 1rem;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 30px;
+    background-color: #f0f0f0;
+    border-radius: 15px;
+    overflow: hidden;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #3498db, #2ecc71);
+    transition: width 0.3s ease;
+    border-radius: 15px;
+    box-shadow: 0 2px 8px rgba(52, 152, 219, 0.3);
+    position: relative;
+    overflow: hidden;
+}
+
+.progress-fill::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.3),
+        transparent
+    );
+    animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+.progress-text {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 1rem;
+    font-size: 0.9rem;
+}
+
+#progressPercent {
+    font-weight: bold;
+    color: #3498db;
+}
+
+#progressStatus {
+    color: #666;
+}
+
+.error-message {
+    padding: 1rem;
+    background-color: #fee;
+    border: 1px solid #fcc;
+    border-radius: 4px;
+    color: #c00;
+    margin-top: 1rem;
+}
+
+.modal-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #e0e0e0;
+    text-align: right;
+}
+</style>
+
+<script>
+class ProgressModal {
+    constructor() {
+        this.modal = document.getElementById('progressModal');
+        this.title = document.getElementById('progressTitle');
+        this.bar = document.getElementById('progressFill');
+        this.percent = document.getElementById('progressPercent');
+        this.status = document.getElementById('progressStatus');
+        this.error = document.getElementById('progressError');
+        this.closeBtn = document.getElementById('progressClose');
+        this.taskId = null;
+        this.checkInterval = null;
+        
+        this.closeBtn.addEventListener('click', () => this.close());
+    }
+    
+    show(title = 'Processing...') {
+        this.title.textContent = title;
+        this.modal.style.display = 'flex';
+        this.error.style.display = 'none';
+        this.closeBtn.style.display = 'none';
+        this.updateProgress(0, 'Initializing...');
+    }
+    
+    close() {
+        this.modal.style.display = 'none';
+        if (this.checkInterval) {
+            clearInterval(this.checkInterval);
+            this.checkInterval = null;
+        }
+        this.taskId = null;
+    }
+    
+    updateProgress(percent, status) {
+        this.bar.style.width = percent + '%';
+        this.percent.textContent = percent + '%';
+        this.status.textContent = status;
+    }
+    
+    showError(message) {
+        this.error.textContent = message;
+        this.error.style.display = 'block';
+        this.closeBtn.style.display = 'inline-block';
+    }
+    
+    async trackTask(taskId, onComplete) {
+        this.taskId = taskId;
+        
+        this.checkInterval = setInterval(async () => {
+            try {
+                const response = await fetch(`/api/tasks/${taskId}/progress/`);
+                const data = await response.json();
+                
+                if (data.state === 'PROGRESS') {
+                    const percent = Math.round((data.progress / (data.total || 100)) * 100);
+                    this.updateProgress(percent, data.status);
+                } else if (data.state === 'SUCCESS') {
+                    this.updateProgress(100, 'Complete!');
+                    clearInterval(this.checkInterval);
+                    this.closeBtn.style.display = 'inline-block';
+                    if (onComplete) {
+                        onComplete(data);
+                    }
+                } else if (data.state === 'FAILURE') {
+                    this.showError(data.error || 'Task failed');
+                    clearInterval(this.checkInterval);
+                } else {
+                    this.updateProgress(0, data.status || 'Waiting...');
+                }
+            } catch (error) {
+                console.error('Error checking progress:', error);
+                this.showError('Error checking progress');
+                clearInterval(this.checkInterval);
+            }
+        }, 1000); // Check every second
+    }
+    
+    async analyzeArticle(articleId, onComplete) {
+        this.show('Analyzing Article');
+        
+        try {
+            const response = await fetch(`/api/articles/${articleId}/analyze-async/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.status === 'started') {
+                await this.trackTask(data.task_id, onComplete);
+            } else if (data.status === 'already_analyzed') {
+                this.updateProgress(100, 'Article already analyzed');
+                this.closeBtn.style.display = 'inline-block';
+                if (onComplete) {
+                    onComplete(data);
+                }
+            } else {
+                this.showError(data.message || 'Failed to start analysis');
+            }
+        } catch (error) {
+            console.error('Error starting analysis:', error);
+            this.showError('Failed to start analysis');
+        }
+    }
+    
+    async generateContent(articleIds, style, targetLength, onComplete) {
+        this.show('Generating Content');
+        
+        try {
+            const response = await fetch('/api/content/generate-async/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCookie('csrftoken')
+                },
+                body: JSON.stringify({
+                    source_article_ids: articleIds,
+                    style: style,
+                    target_length: targetLength
+                })
+            });
+            
+            const data = await response.json();
+            
+            if (data.status === 'started') {
+                await this.trackTask(data.task_id, onComplete);
+            } else {
+                this.showError(data.message || 'Failed to start generation');
+            }
+        } catch (error) {
+            console.error('Error starting generation:', error);
+            this.showError('Failed to start content generation');
+        }
+    }
+}
+
+// Helper function to get CSRF token
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Initialize progress modal when DOM is ready
+let progressModal;
+document.addEventListener('DOMContentLoaded', function() {
+    progressModal = new ProgressModal();
+    window.progressModal = progressModal; // Make it globally accessible
+});
+</script>

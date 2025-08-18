@@ -272,13 +272,13 @@ class ContentFetcher:
     
     def _extract_article_content(self, soup: BeautifulSoup) -> Optional[str]:
         """
-        Extract article content from parsed HTML.
+        Extract article content from parsed HTML, preserving links and media.
         
         Args:
             soup: BeautifulSoup parsed HTML
             
         Returns:
-            Extracted content text or None
+            Extracted content HTML or None
         """
         # Remove unwanted elements first
         for element in soup(['nav', 'header', 'footer', 'aside', 'form', 'button']):
@@ -287,7 +287,8 @@ class ContentFetcher:
         # Remove elements with specific classes/ids that typically contain non-content
         for selector in ['.sidebar', '.navigation', '.menu', '.advertisement', 
                         '.ads', '#header', '#footer', '#comments', '.social-share',
-                        '.related-posts', '.recommended', '.newsletter', '.popup']:
+                        '.related-posts', '.recommended', '.newsletter', '.popup',
+                        '.cookie-notice', '.gdpr', '.signup', '.promo']:
             for element in soup.select(selector):
                 element.decompose()
         
@@ -323,57 +324,118 @@ class ContentFetcher:
                 content_elem = elements[0]
                 
                 # Remove any remaining script/style tags within content
-                for tag in content_elem(['script', 'style', 'noscript']):
+                for tag in content_elem(['script', 'style', 'noscript', 'iframe']):
+                    # Keep iframe if it's a video embed
+                    if tag.name == 'iframe' and any(domain in str(tag.get('src', '')) 
+                                                   for domain in ['youtube', 'vimeo', 'dailymotion']):
+                        continue
                     tag.decompose()
                 
-                # Extract text with better formatting
-                paragraphs = content_elem.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'blockquote', 'li'])
-                text_blocks = []
+                # Extract and return HTML content
+                # Just get the inner HTML as string - simpler and faster
+                content_html = str(content_elem)
                 
-                for elem in paragraphs:
-                    text = elem.get_text(strip=True)
-                    if len(text) > 30:  # Filter out very short blocks
-                        # Add appropriate spacing for headers
-                        if elem.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
-                            text_blocks.append(f"\n{text}\n")
-                        else:
-                            text_blocks.append(text)
-                
-                if text_blocks and len('\n'.join(text_blocks)) > 200:
-                    return '\n\n'.join(text_blocks)
+                if content_html and len(content_html) > 200:
+                    return content_html
         
         # Fallback: try to find the largest concentration of paragraphs
         all_paragraphs = soup.find_all('p')
-        if all_paragraphs:
-            # Group consecutive paragraphs
-            text_blocks = []
-            current_block = []
-            
+        if all_paragraphs and len(all_paragraphs) > 3:
+            # Build HTML from paragraphs
+            html_parts = []
             for p in all_paragraphs:
-                text = p.get_text(strip=True)
-                if len(text) > 50:  # Ignore short paragraphs
-                    current_block.append(text)
-                elif current_block:
-                    # End of a block
-                    if len(current_block) > 2:  # At least 3 paragraphs
-                        text_blocks.extend(current_block)
-                    current_block = []
+                if len(p.get_text(strip=True)) > 50:  # Ignore short paragraphs
+                    html_parts.append(str(p))
             
-            # Don't forget the last block
-            if len(current_block) > 2:
-                text_blocks.extend(current_block)
-            
-            if text_blocks:
-                return '\n\n'.join(text_blocks)
+            if html_parts:
+                combined_html = '\n'.join(html_parts)
+                if len(combined_html) > 500:
+                    return f'<div>{combined_html}</div>'
         
-        # Last resort: get all text but filter aggressively
-        body_text = soup.get_text(separator='\n', strip=True)
-        lines = [line.strip() for line in body_text.split('\n') if len(line.strip()) > 50]
-        
-        if lines and len('\n'.join(lines)) > 500:
-            return '\n'.join(lines)
+        # Last resort: get text content if no HTML can be extracted
+        text = soup.get_text(separator='\n', strip=True)
+        if text and len(text) > 500:
+            # Convert plain text to basic HTML
+            paragraphs = [f'<p>{p}</p>' for p in text.split('\n\n') if len(p) > 50]
+            if paragraphs:
+                return '\n'.join(paragraphs)
         
         return None
+    
+    def _clean_and_preserve_html(self, element) -> str:
+        """
+        Clean HTML while preserving links, images, and video embeds.
+        
+        Args:
+            element: BeautifulSoup element
+            
+        Returns:
+            Cleaned HTML string
+        """
+        import re
+        
+        # Allowed tags that we want to preserve
+        allowed_tags = [
+            'p', 'a', 'img', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+            'blockquote', 'ul', 'ol', 'li', 'strong', 'b', 'em', 'i',
+            'br', 'hr', 'span', 'div', 'figure', 'figcaption',
+            'video', 'source', 'iframe', 'picture', 'code', 'pre'
+        ]
+        
+        # Allowed attributes for specific tags
+        allowed_attrs = {
+            'a': ['href', 'title', 'target', 'rel'],
+            'img': ['src', 'alt', 'title', 'width', 'height', 'loading'],
+            'video': ['src', 'poster', 'controls', 'width', 'height'],
+            'source': ['src', 'type'],
+            'iframe': ['src', 'width', 'height', 'frameborder', 'allowfullscreen'],
+            'figure': ['class'],
+            'div': ['class'],
+            'span': ['class']
+        }
+        
+        # First pass: remove completely unwanted tags
+        for tag in element.find_all(['script', 'style', 'meta', 'link']):
+            tag.decompose()
+        
+        # Second pass: process remaining tags
+        for tag in list(element.find_all(True)):
+            # Skip if tag was already removed
+            if not tag.parent:
+                continue
+                
+            # Remove tag if not allowed (keep its contents)
+            if tag.name not in allowed_tags:
+                tag.unwrap()
+                continue
+            
+            # Clean attributes
+            attrs_to_keep = allowed_attrs.get(tag.name, [])
+            for attr in list(tag.attrs.keys()):
+                if attr not in attrs_to_keep:
+                    del tag.attrs[attr]
+            
+            # Make links open in new tab for safety
+            if tag.name == 'a' and tag.get('href'):
+                tag['target'] = '_blank'
+                tag['rel'] = 'noopener noreferrer'
+            
+            # Ensure images have alt text
+            if tag.name == 'img' and not tag.get('alt'):
+                tag['alt'] = 'Article image'
+            
+            # Clean up empty tags (except self-closing ones)
+            if tag.name not in ['img', 'br', 'hr', 'source'] and not tag.get_text(strip=True) and not tag.find_all(['img', 'video', 'iframe']):
+                tag.decompose()
+        
+        # Convert to string and clean up whitespace
+        html_str = str(element)
+        
+        # Remove excessive whitespace
+        html_str = re.sub(r'\n\s*\n+', '\n\n', html_str)
+        html_str = re.sub(r'  +', ' ', html_str)
+        
+        return html_str.strip()
     
     def _parse_date(self, date_tuple) -> Optional[datetime]:
         """

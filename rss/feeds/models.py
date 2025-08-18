@@ -138,6 +138,92 @@ class Article(models.Model):
         return cls.objects.filter(url=url, content_hash=content_hash).exists()
 
 
+class ArticleAnalysis(models.Model):
+    """Model to store AI analysis of articles."""
+    article = models.OneToOneField('Article', on_delete=models.CASCADE, related_name='analysis')
+    ai_summary = models.TextField(help_text="AI-generated summary")
+    topics = models.JSONField(default=list, help_text="List of topics/categories")
+    entities = models.JSONField(default=dict, help_text="Named entities (people, orgs, locations)")
+    sentiment = models.CharField(max_length=20, default='neutral', 
+                                help_text="Sentiment: positive/negative/neutral")
+    keywords = models.JSONField(default=list, help_text="SEO keywords")
+    similar_articles = models.ManyToManyField('Article', blank=True,
+                                             related_name='similar_to',
+                                             help_text="Articles with similar content")
+    duplicate_of = models.ForeignKey('Article', null=True, blank=True,
+                                    on_delete=models.SET_NULL,
+                                    related_name='duplicates',
+                                    help_text="Original article if this is a duplicate")
+    analyzed_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['-analyzed_at']
+        verbose_name_plural = "Article analyses"
+    
+    def __str__(self):
+        return f"Analysis of: {self.article.title[:50]}"
+
+
+class GeneratedContent(models.Model):
+    """Model to store AI-generated content based on source articles."""
+    STYLE_CHOICES = [
+        ('news', 'News Article'),
+        ('blog', 'Blog Post'),
+        ('analysis', 'Analysis'),
+        ('summary', 'Summary'),
+    ]
+    
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('review', 'Under Review'),
+        ('published', 'Published'),
+        ('archived', 'Archived'),
+    ]
+    
+    title = models.CharField(max_length=500)
+    subtitle = models.CharField(max_length=500, blank=True)
+    content = models.TextField(help_text="Generated content in HTML format")
+    summary = models.TextField(blank=True, help_text="Brief summary")
+    style = models.CharField(max_length=20, choices=STYLE_CHOICES, default='news')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    
+    # Source articles used for generation
+    source_articles = models.ManyToManyField('Article', related_name='generated_content',
+                                            help_text="Source articles used")
+    
+    # Metadata
+    topics = models.JSONField(default=list, help_text="Topics covered")
+    media_items = models.JSONField(default=list, help_text="Associated media URLs and captions")
+    generation_params = models.JSONField(default=dict, help_text="Parameters used for generation")
+    
+    # Web sources used for additional context
+    web_sources = models.JSONField(default=list, help_text="Web sources used for research")
+    
+    # Tracking
+    generated_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    published_at = models.DateTimeField(null=True, blank=True)
+    
+    # Optional URL if published
+    published_url = models.URLField(max_length=2048, blank=True)
+    
+    class Meta:
+        ordering = ['-generated_at']
+        verbose_name = "Generated content"
+        verbose_name_plural = "Generated content"
+    
+    def __str__(self):
+        return f"{self.title} ({self.style} - {self.status})"
+    
+    def get_source_attribution(self):
+        """Get formatted source attribution for the generated content."""
+        return [
+            {"title": article.title, "url": article.url, "date": article.published_date}
+            for article in self.source_articles.all()
+        ]
+
+
 class FetchLog(models.Model):
     """Model to log feed fetching activities."""
     feed = models.ForeignKey(Feed, on_delete=models.CASCADE, related_name='fetch_logs')

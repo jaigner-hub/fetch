@@ -1,0 +1,484 @@
+{% extends "feeds/base.html" %}
+
+{% block title %}Generate Content - RSS Aggregator{% endblock %}
+
+{% block content %}
+{% include "feeds/components/progress_modal.html" %}
+<div class="breadcrumb">
+    <a href="{% url 'feeds:analysis-dashboard' %}">Analysis Dashboard</a> /
+    Generate Content
+</div>
+
+<h2>Generate New Content</h2>
+<p class="subtitle">Select source articles and configure generation settings to create new content using AI.</p>
+
+<form method="post" id="generate-form" onsubmit="return generateContent(event)">
+    {% csrf_token %}
+    
+    <div class="generation-settings">
+        <h3>Generation Settings</h3>
+        
+        <!-- AI Provider Selection -->
+        <div class="provider-selection">
+            <div class="form-group">
+                <label>AI Provider:</label>
+                <div class="radio-group">
+                    <label class="radio-label">
+                        <input type="radio" name="ai_provider" value="claude" checked onchange="toggleProviderSettings()">
+                        <span>Claude (Default)</span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="ai_provider" value="keygrip" onchange="toggleProviderSettings()">
+                        <span>Keygrip AI</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Claude Settings -->
+        <div id="claude-settings" class="provider-settings">
+            <h4>Claude Settings</h4>
+            <div class="settings-grid">
+                <div class="form-group">
+                    <label for="style">Writing Style:</label>
+                    <select name="style" id="style">
+                        {% for value, label in style_choices %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <small>Choose the writing style for the generated content</small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="target_length">Target Length (words):</label>
+                    <input type="number" name="target_length" id="target_length" value="800" min="200" max="2000">
+                    <small>Approximate word count for the generated article</small>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Keygrip Settings -->
+        <div id="keygrip-settings" class="provider-settings" style="display: none;">
+            <h4>Keygrip Settings</h4>
+            <input type="hidden" name="use_keygrip" id="use_keygrip" value="">
+            <div class="settings-grid">
+                <div class="form-group">
+                    <label for="voice_prompt_id">Voice Prompt:</label>
+                    <select name="voice_prompt_id" id="voice_prompt_id">
+                        <option value="product_writer">Product Writer</option>
+                        <option value="news_reporter">News Reporter</option>
+                        <option value="blog_writer">Blog Writer</option>
+                        <option value="technical_writer">Technical Writer</option>
+                        <option value="creative_writer">Creative Writer</option>
+                    </select>
+                    <small>Select the writing voice/style for Keygrip</small>
+                </div>
+                
+                <div class="form-group">
+                    <label>Additional Options:</label>
+                    <div class="checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="use_writing_samples" id="use_writing_samples">
+                            <span>Use Writing Samples</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="use_web_search" id="use_web_search" checked>
+                            <span>Use Web Search</span>
+                        </label>
+                    </div>
+                    <small>Configure additional Keygrip features</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="source-selection">
+        <h3>Select Source Articles</h3>
+        <p>Choose 2-5 articles to use as sources for content generation. Articles should be related for best results.</p>
+        
+        <div class="selection-stats">
+            <span id="selected-count">0</span> articles selected
+        </div>
+        
+        <div class="articles-list">
+            {% for article in available_articles %}
+            <div class="article-select-item">
+                <input type="checkbox" name="article_ids" value="{{ article.id }}" id="article-{{ article.id }}" class="article-checkbox">
+                <label for="article-{{ article.id }}">
+                    <div class="article-info">
+                        <h4>{{ article.title|truncatechars:80 }}</h4>
+                        <div class="article-meta">
+                            <span>{{ article.feed.website.name }}</span> |
+                            <span>{{ article.published_date|date:"M d, Y" }}</span>
+                            {% if article.analysis %}
+                            | Topics: 
+                            {% for topic in article.analysis.topics|slice:":3" %}
+                                <span class="topic-tag">{{ topic }}</span>
+                            {% endfor %}
+                            {% endif %}
+                        </div>
+                        {% if article.analysis %}
+                        <p class="article-summary">{{ article.analysis.ai_summary|truncatechars:150 }}</p>
+                        {% endif %}
+                    </div>
+                </label>
+            </div>
+            {% empty %}
+            <div class="no-articles">
+                <p>No analyzed articles available for content generation.</p>
+                <p>Please <a href="{% url 'feeds:analysis-dashboard' %}">analyze some articles</a> first.</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary btn-large" id="generate-btn" disabled>
+            Generate Content
+        </button>
+        <a href="{% url 'feeds:analysis-dashboard' %}" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+
+<div class="generation-tips">
+    <h3>Tips for Best Results</h3>
+    <ul>
+        <li>Select articles that cover related topics for more coherent content</li>
+        <li>Choose articles from different perspectives to create balanced content</li>
+        <li>The AI will synthesize information and create original content, not just combine text</li>
+        <li>Generated content will include proper attribution to source articles</li>
+    </ul>
+</div>
+
+<script>
+function toggleProviderSettings() {
+    const providers = document.querySelectorAll('input[name="ai_provider"]');
+    const claudeSettings = document.getElementById('claude-settings');
+    const keygripSettings = document.getElementById('keygrip-settings');
+    const useKeygripInput = document.getElementById('use_keygrip');
+    
+    providers.forEach(provider => {
+        if (provider.checked) {
+            if (provider.value === 'keygrip') {
+                claudeSettings.style.display = 'none';
+                keygripSettings.style.display = 'block';
+                useKeygripInput.value = 'on';
+            } else {
+                claudeSettings.style.display = 'block';
+                keygripSettings.style.display = 'none';
+                useKeygripInput.value = '';
+            }
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const checkboxes = document.querySelectorAll('.article-checkbox');
+    const selectedCount = document.getElementById('selected-count');
+    const generateBtn = document.getElementById('generate-btn');
+    
+    function updateSelection() {
+        const checked = document.querySelectorAll('.article-checkbox:checked').length;
+        selectedCount.textContent = checked;
+        
+        // Enable/disable generate button based on selection
+        if (checked >= 1 && checked <= 5) {
+            generateBtn.disabled = false;
+            generateBtn.textContent = 'Generate Content';
+        } else if (checked > 5) {
+            generateBtn.disabled = true;
+            generateBtn.textContent = 'Too many articles (max 5)';
+        } else {
+            generateBtn.disabled = true;
+            generateBtn.textContent = 'Select at least 1 article';
+        }
+        
+        // Highlight selected items
+        checkboxes.forEach(cb => {
+            const item = cb.closest('.article-select-item');
+            if (cb.checked) {
+                item.classList.add('selected');
+            } else {
+                item.classList.remove('selected');
+            }
+        });
+    }
+    
+    checkboxes.forEach(cb => {
+        cb.addEventListener('change', updateSelection);
+    });
+    
+    // Check if article was pre-selected from URL parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const sourceId = urlParams.get('source');
+    if (sourceId) {
+        const sourceCheckbox = document.getElementById('article-' + sourceId);
+        if (sourceCheckbox) {
+            sourceCheckbox.checked = true;
+            updateSelection();
+        }
+    }
+});
+
+function generateContent(event) {
+    event.preventDefault();
+    
+    // Get selected articles
+    const selectedArticles = [];
+    document.querySelectorAll('.article-checkbox:checked').forEach(cb => {
+        selectedArticles.push(parseInt(cb.value));
+    });
+    
+    if (selectedArticles.length === 0) {
+        alert('Please select at least one article');
+        return false;
+    }
+    
+    const style = document.getElementById('style').value;
+    const targetLength = parseInt(document.getElementById('target_length').value);
+    
+    if (window.progressModal) {
+        progressModal.generateContent(selectedArticles, style, targetLength, function(result) {
+            // Check if we got a content ID
+            if (result && result.content_id) {
+                window.location.href = `/content/${result.content_id}/`;
+            } else {
+                // Redirect to content list after generation
+                setTimeout(() => {
+                    window.location.href = '/content/';
+                }, 1500);
+            }
+        });
+    } else {
+        // Fallback to regular form submission
+        document.getElementById('generate-form').submit();
+    }
+    
+    return false;
+}
+</script>
+
+<style>
+.breadcrumb {
+    margin-bottom: 1rem;
+    color: #666;
+}
+
+.breadcrumb a {
+    color: #3498db;
+    text-decoration: none;
+}
+
+.subtitle {
+    color: #666;
+    margin-bottom: 2rem;
+}
+
+.generation-settings {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+}
+
+.settings-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+}
+
+.form-group {
+    margin-bottom: 1rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+.form-group select,
+.form-group input {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.form-group small {
+    display: block;
+    margin-top: 0.25rem;
+    color: #666;
+    font-size: 0.85rem;
+}
+
+.source-selection {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+}
+
+.selection-stats {
+    background: #f8f9fa;
+    padding: 0.75rem 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    font-weight: 500;
+}
+
+.articles-list {
+    max-height: 600px;
+    overflow-y: auto;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+}
+
+.article-select-item {
+    border-bottom: 1px solid #f0f0f0;
+    transition: background-color 0.2s;
+}
+
+.article-select-item:last-child {
+    border-bottom: none;
+}
+
+.article-select-item.selected {
+    background: #e8f4f8;
+}
+
+.article-select-item label {
+    display: flex;
+    padding: 1rem;
+    cursor: pointer;
+}
+
+.article-select-item input[type="checkbox"] {
+    margin-right: 1rem;
+    margin-top: 0.25rem;
+}
+
+.article-info {
+    flex: 1;
+}
+
+.article-info h4 {
+    margin-bottom: 0.5rem;
+    color: #2c3e50;
+}
+
+.article-meta {
+    color: #666;
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+}
+
+.topic-tag {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    background: #3498db;
+    color: white;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    margin-left: 0.25rem;
+}
+
+.article-summary {
+    color: #666;
+    font-size: 0.9rem;
+    margin-top: 0.5rem;
+}
+
+.no-articles {
+    padding: 3rem;
+    text-align: center;
+    color: #666;
+}
+
+.form-actions {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 2rem;
+}
+
+.btn-large {
+    padding: 0.75rem 2rem;
+    font-size: 1.1rem;
+}
+
+.btn-secondary {
+    background: #6c757d;
+}
+
+.btn-secondary:hover {
+    background: #5a6268;
+}
+
+.generation-tips {
+    background: #f8f9fa;
+    padding: 1.5rem;
+    border-radius: 8px;
+}
+
+.generation-tips h3 {
+    margin-bottom: 1rem;
+    color: #2c3e50;
+}
+
+.generation-tips ul {
+    list-style-position: inside;
+    color: #666;
+    line-height: 1.8;
+}
+
+.generation-tips li {
+    margin-bottom: 0.5rem;
+}
+
+.provider-selection {
+    margin-bottom: 1.5rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid #e0e0e0;
+}
+
+.radio-group {
+    display: flex;
+    gap: 2rem;
+}
+
+.radio-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.radio-label input[type="radio"] {
+    margin-right: 0.5rem;
+}
+
+.provider-settings {
+    margin-top: 1.5rem;
+}
+
+.provider-settings h4 {
+    margin-bottom: 1rem;
+    color: #2c3e50;
+}
+
+.checkbox-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+    margin-right: 0.5rem;
+}
+</style>
+{% endblock %}

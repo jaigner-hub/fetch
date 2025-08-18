@@ -13,4 +13,7 @@ from django.core.wsgi import get_wsgi_application
 
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'rss.settings')
 
+# Set the Anthropic API key from environment variable
+# To use Claude features, set ANTHROPIC_API_KEY in your environment
+
 application = get_wsgi_application()

@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from . import api_views
 
 app_name = 'feeds'
 
@@ -26,6 +27,36 @@ urlpatterns = [
     path('articles/', views.ArticleListView.as_view(), name='article-list'),
     path('articles/<int:pk>/', views.ArticleDetailView.as_view(), name='article-detail'),
     
+    # Analysis URLs
+    path('analysis/', views.AnalysisDashboardView.as_view(), name='analysis-dashboard'),
+    path('analysis/article/<int:pk>/', views.ArticleAnalysisDetailView.as_view(), name='article-analysis-detail'),
+    path('analysis/article/<int:pk>/analyze/', views.analyze_article_view, name='analyze-article'),
+    path('analysis/batch/', views.batch_analyze_view, name='batch-analyze'),
+    
+    # Generated Content URLs
+    path('content/', views.GeneratedContentListView.as_view(), name='generated-content-list'),
+    path('content/generate/', views.GenerateContentView.as_view(), name='generate-content'),
+    path('content/<int:pk>/', views.GeneratedContentDetailView.as_view(), name='generated-content-detail'),
+    path('content/<int:pk>/status/', views.update_content_status, name='update-content-status'),
+    
     # API endpoints
     path('api/stats/', views.feed_stats_api, name='api-stats'),
+    path('api/websites/<int:pk>/fetch-progress/', views.fetch_progress_api, name='api-fetch-progress'),
+    path('api/websites/<int:pk>/discover-progress/', views.discover_progress_api, name='api-discover-progress'),
+    
+    # Article Analysis API endpoints
+    path('api/articles/<int:article_id>/analyze/', api_views.analyze_article, name='api-analyze-article'),
+    path('api/articles/<int:article_id>/analyze-async/', api_views.analyze_article_with_progress, name='api-analyze-article-async'),
+    path('api/articles/<int:article_id>/analysis/', api_views.get_article_analysis, name='api-get-analysis'),
+    path('api/articles/find-similar/', api_views.find_similar_articles, name='api-find-similar'),
+    path('api/articles/batch-analyze/', api_views.batch_analyze_articles, name='api-batch-analyze'),
+    
+    # Content Generation API endpoints
+    path('api/content/generate/', api_views.generate_content, name='api-generate-content'),
+    path('api/content/generate-async/', api_views.generate_content_with_progress, name='api-generate-content-async'),
+    path('api/content/<int:content_id>/', api_views.get_generated_content, name='api-get-generated-content'),
+    path('api/content/', api_views.list_generated_content, name='api-list-generated-content'),
+    
+    # Task Progress API
+    path('api/tasks/<str:task_id>/progress/', api_views.check_task_progress, name='api-task-progress'),
 ]

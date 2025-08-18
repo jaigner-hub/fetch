@@ -89,7 +89,21 @@ class Command(BaseCommand):
                 feeds_updated = 0
                 feeds_skipped = 0
                 
-                for feed_info in feeds_data:
+                # Handle both nested and flat JSON structures
+                if isinstance(feeds_data, dict):
+                    # Nested structure with 'feeds' key
+                    if 'feeds' in feeds_data:
+                        feeds_list = feeds_data['feeds']
+                    else:
+                        # Single feed as dict
+                        feeds_list = [feeds_data]
+                elif isinstance(feeds_data, list):
+                    # Already a list of feeds
+                    feeds_list = feeds_data
+                else:
+                    raise CommandError(f'Invalid feeds data structure: expected dict or list, got {type(feeds_data)}')
+                
+                for feed_info in feeds_list:
                     feed_url = feed_info.get('url')
                     if not feed_url:
                         self.stdout.write(
@@ -104,7 +118,8 @@ class Command(BaseCommand):
                         else:
                             feed_url = 'http://' + feed_url
                     
-                    feed_name = feed_info.get('name', '')
+                    # Support both 'name' and 'title' fields
+                    feed_name = feed_info.get('name') or feed_info.get('title', '')
                     feed_type = feed_info.get('type', 'RSS').upper()
                     
                     # Validate feed type

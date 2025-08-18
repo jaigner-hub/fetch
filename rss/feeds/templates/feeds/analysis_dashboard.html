@@ -1,0 +1,373 @@
+{% extends "feeds/base.html" %}
+
+{% block title %}Article Analysis Dashboard - RSS Aggregator{% endblock %}
+
+{% block content %}
+{% include "feeds/components/progress_modal.html" %}
+<div class="dashboard-header">
+    <h2>Article Analysis Dashboard</h2>
+    <div class="actions">
+        <a href="{% url 'feeds:generate-content' %}" class="btn btn-primary">Generate Content</a>
+    </div>
+</div>
+
+<!-- Statistics Cards -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <h3>Total Articles</h3>
+        <div class="stat-value">{{ stats.total_articles|default:"0" }}</div>
+    </div>
+    <div class="stat-card">
+        <h3>Analyzed</h3>
+        <div class="stat-value">{{ stats.analyzed_count|default:"0" }}</div>
+        <div class="stat-subtitle">{{ stats.analysis_percentage|floatformat:1 }}% complete</div>
+    </div>
+    <div class="stat-card">
+        <h3>Duplicates Found</h3>
+        <div class="stat-value">{{ stats.duplicate_count|default:"0" }}</div>
+    </div>
+    <div class="stat-card">
+        <h3>Generated Content</h3>
+        <div class="stat-value">{{ stats.generated_count|default:"0" }}</div>
+    </div>
+</div>
+
+<!-- Batch Analysis Form -->
+<div class="analysis-form card">
+    <h3>Batch Analysis</h3>
+    <form method="post" action="{% url 'feeds:batch-analyze' %}">
+        {% csrf_token %}
+        <div class="form-row">
+            <div class="form-group">
+                <label for="website_id">Website (optional):</label>
+                <select name="website_id" id="website_id">
+                    <option value="">All Websites</option>
+                    {% for website in websites %}
+                    <option value="{{ website.id }}">{{ website.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="days">Days Back:</label>
+                <input type="number" name="days" id="days" value="7" min="1" max="365">
+            </div>
+            <div class="form-group">
+                <label for="limit">Max Articles:</label>
+                <input type="number" name="limit" id="limit" value="10" min="1" max="100">
+            </div>
+            <button type="submit" class="btn btn-primary">Start Analysis</button>
+        </div>
+    </form>
+</div>
+
+<!-- Filters -->
+<div class="filters">
+    <form method="get" class="filter-form">
+        <select name="filter" onchange="this.form.submit()">
+            <option value="all" {% if request.GET.filter == 'all' or not request.GET.filter %}selected{% endif %}>All Articles</option>
+            <option value="analyzed" {% if request.GET.filter == 'analyzed' %}selected{% endif %}>Analyzed</option>
+            <option value="unanalyzed" {% if request.GET.filter == 'unanalyzed' %}selected{% endif %}>Not Analyzed</option>
+            <option value="duplicates" {% if request.GET.filter == 'duplicates' %}selected{% endif %}>Duplicates</option>
+        </select>
+        
+        <select name="days" onchange="this.form.submit()">
+            <option value="1" {% if request.GET.days == '1' %}selected{% endif %}>Last 24 hours</option>
+            <option value="7" {% if request.GET.days == '7' or not request.GET.days %}selected{% endif %}>Last 7 days</option>
+            <option value="30" {% if request.GET.days == '30' %}selected{% endif %}>Last 30 days</option>
+            <option value="365" {% if request.GET.days == '365' %}selected{% endif %}>All time</option>
+        </select>
+        
+        <input type="text" name="search" placeholder="Search articles..." value="{{ request.GET.search }}">
+        <button type="submit" class="btn">Search</button>
+    </form>
+</div>
+
+<!-- Recent Articles -->
+<div class="articles-section">
+    <h3>Recent Articles</h3>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>Website</th>
+                <th>Published</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for article in recent_articles %}
+            <tr>
+                <td>
+                    <a href="{% url 'feeds:article-detail' article.pk %}">
+                        {{ article.title|truncatechars:60 }}
+                    </a>
+                </td>
+                <td>{{ article.feed.website.name }}</td>
+                <td>{{ article.published_date|date:"M d, Y H:i" }}</td>
+                <td>
+                    {% if article.has_analysis %}
+                        <span class="badge badge-success">Analyzed</span>
+                        {% if article.analysis.duplicate_of %}
+                            <span class="badge badge-warning">Duplicate</span>
+                        {% endif %}
+                    {% else %}
+                        <span class="badge badge-secondary">Not Analyzed</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if article.has_analysis %}
+                        <a href="{% url 'feeds:article-analysis-detail' article.pk %}" class="btn btn-sm">View Analysis</a>
+                    {% else %}
+                        <button onclick="analyzeArticle({{ article.pk }})" class="btn btn-sm btn-primary">Analyze</button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5" class="text-center">No articles found</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    {% if is_paginated %}
+    <div class="pagination">
+        {% if page_obj.has_previous %}
+            <a href="?page=1{% if request.GET.filter %}&filter={{ request.GET.filter }}{% endif %}{% if request.GET.days %}&days={{ request.GET.days }}{% endif %}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}" class="btn btn-sm">First</a>
+            <a href="?page={{ page_obj.previous_page_number }}{% if request.GET.filter %}&filter={{ request.GET.filter }}{% endif %}{% if request.GET.days %}&days={{ request.GET.days }}{% endif %}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}" class="btn btn-sm">Previous</a>
+        {% endif %}
+        
+        <span class="current-page">
+            Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+        </span>
+        
+        {% if page_obj.has_next %}
+            <a href="?page={{ page_obj.next_page_number }}{% if request.GET.filter %}&filter={{ request.GET.filter }}{% endif %}{% if request.GET.days %}&days={{ request.GET.days }}{% endif %}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}" class="btn btn-sm">Next</a>
+            <a href="?page={{ page_obj.paginator.num_pages }}{% if request.GET.filter %}&filter={{ request.GET.filter }}{% endif %}{% if request.GET.days %}&days={{ request.GET.days }}{% endif %}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}" class="btn btn-sm">Last</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- Recent Analyses -->
+{% if recent_analyses %}
+<div class="recent-section">
+    <h3>Recent Analyses</h3>
+    <div class="analysis-list">
+        {% for analysis in recent_analyses %}
+        <div class="analysis-item">
+            <h4>
+                <a href="{% url 'feeds:article-analysis-detail' analysis.article.pk %}">
+                    {{ analysis.article.title|truncatechars:60 }}
+                </a>
+            </h4>
+            <p class="meta">
+                Analyzed {{ analysis.analyzed_at|timesince }} ago |
+                Topics: {{ analysis.topics|join:", "|default:"None" }}
+            </p>
+            <p class="summary">{{ analysis.ai_summary|truncatechars:150 }}</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Recent Generated Content -->
+{% if recent_generated %}
+<div class="recent-section">
+    <h3>Recent Generated Content</h3>
+    <div class="content-list">
+        {% for content in recent_generated %}
+        <div class="content-item">
+            <h4>
+                <a href="{% url 'feeds:generated-content-detail' content.pk %}">
+                    {{ content.title }}
+                </a>
+            </h4>
+            <p class="meta">
+                Generated {{ content.generated_at|timesince }} ago |
+                Style: {{ content.get_style_display }} |
+                Status: <span class="badge badge-{{ content.status }}">{{ content.get_status_display }}</span>
+            </p>
+            <p>{{ content.summary|truncatechars:150 }}</p>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<style>
+.dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    text-align: center;
+}
+
+.stat-card h3 {
+    color: #666;
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #2c3e50;
+}
+
+.stat-subtitle {
+    font-size: 0.9rem;
+    color: #666;
+    margin-top: 0.25rem;
+}
+
+.analysis-form {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+}
+
+.form-row {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-end;
+}
+
+.form-group {
+    flex: 1;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.25rem;
+    font-weight: 500;
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.filters {
+    background: white;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+}
+
+.filter-form {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.filter-form select,
+.filter-form input {
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.filter-form input[type="text"] {
+    flex: 1;
+}
+
+.badge {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.badge-success {
+    background: #d4edda;
+    color: #155724;
+}
+
+.badge-warning {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.badge-secondary {
+    background: #e2e3e5;
+    color: #383d41;
+}
+
+.badge-draft {
+    background: #e2e3e5;
+    color: #383d41;
+}
+
+.badge-published {
+    background: #d4edda;
+    color: #155724;
+}
+
+.recent-section {
+    margin-top: 2rem;
+}
+
+.analysis-item,
+.content-item {
+    background: white;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
+
+.analysis-item h4,
+.content-item h4 {
+    margin-bottom: 0.5rem;
+}
+
+.meta {
+    color: #666;
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+}
+
+.summary {
+    color: #333;
+}
+</style>
+
+<script>
+function analyzeArticle(articleId) {
+    if (window.progressModal) {
+        progressModal.analyzeArticle(articleId, function(result) {
+            // Reload the page to show updated analysis
+            setTimeout(() => {
+                window.location.reload();
+            }, 1500);
+        });
+    } else {
+        // Fallback to regular link if modal not loaded
+        window.location.href = `/analysis/article/${articleId}/analyze/`;
+    }
+}
+</script>
+{% endblock %}
