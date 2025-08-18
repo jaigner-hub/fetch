@@ -100,9 +100,13 @@
             {% if analysis.entities.people %}
             <div class="entity-group">
                 <h4>People</h4>
-                <ul>
+                <ul class="entity-list">
                     {% for person in analysis.entities.people %}
-                    <li>{{ person }}</li>
+                    <li>
+                        <a href="{% url 'feeds:articles-by-person' person=person %}" class="entity-link">
+                            {{ person }}
+                        </a>
+                    </li>
                     {% endfor %}
                 </ul>
             </div>
@@ -111,9 +115,13 @@
             {% if analysis.entities.organizations %}
             <div class="entity-group">
                 <h4>Organizations</h4>
-                <ul>
+                <ul class="entity-list">
                     {% for org in analysis.entities.organizations %}
-                    <li>{{ org }}</li>
+                    <li>
+                        <a href="{% url 'feeds:articles-by-organization' organization=org %}" class="entity-link">
+                            {{ org }}
+                        </a>
+                    </li>
                     {% endfor %}
                 </ul>
             </div>
@@ -122,9 +130,13 @@
             {% if analysis.entities.locations %}
             <div class="entity-group">
                 <h4>Locations</h4>
-                <ul>
+                <ul class="entity-list">
                     {% for location in analysis.entities.locations %}
-                    <li>{{ location }}</li>
+                    <li>
+                        <a href="{% url 'feeds:articles-by-location' location=location %}" class="entity-link">
+                            {{ location }}
+                        </a>
+                    </li>
                     {% endfor %}
                 </ul>
             </div>
@@ -365,13 +377,28 @@
     text-transform: uppercase;
 }
 
-.entity-group ul {
+.entity-list {
     list-style: none;
+    padding: 0;
 }
 
-.entity-group li {
-    padding: 0.25rem 0;
-    color: #333;
+.entity-list li {
+    padding: 0.35rem 0;
+}
+
+.entity-link {
+    color: #e74c3c;
+    text-decoration: none;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    display: inline-block;
+}
+
+.entity-link:hover {
+    background: #ffe5e5;
+    color: #c0392b;
+    transform: translateX(5px);
 }
 
 .duplicate-info {

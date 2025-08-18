@@ -172,6 +172,25 @@
                     None
                 {% endfor %}
             </p>
+            {% if analysis.entities and analysis.entities.people or analysis.entities.organizations or analysis.entities.locations %}
+            <p class="entities-mini">
+                {% if analysis.entities.people %}
+                    <span class="entity-type">People:</span>
+                    {% for person in analysis.entities.people|slice:":3" %}
+                        <a href="{% url 'feeds:articles-by-person' person=person %}" class="entity-link-mini">{{ person }}</a>{% if not forloop.last %}, {% endif %}
+                    {% endfor %}
+                    {% if analysis.entities.people|length > 3 %}...{% endif %}
+                {% endif %}
+                {% if analysis.entities.organizations %}
+                    {% if analysis.entities.people %} | {% endif %}
+                    <span class="entity-type">Orgs:</span>
+                    {% for org in analysis.entities.organizations|slice:":2" %}
+                        <a href="{% url 'feeds:articles-by-organization' organization=org %}" class="entity-link-mini">{{ org }}</a>{% if not forloop.last %}, {% endif %}
+                    {% endfor %}
+                    {% if analysis.entities.organizations|length > 2 %}...{% endif %}
+                {% endif %}
+            </p>
+            {% endif %}
             <p class="summary">{{ analysis.ai_summary|extract_json_summary|truncatechars:150 }}</p>
         </div>
         {% endfor %}
@@ -372,6 +391,31 @@
     background: #3498db;
     color: white;
     text-decoration: none;
+}
+
+.entities-mini {
+    font-size: 0.85rem;
+    color: #666;
+    margin: 0.25rem 0;
+}
+
+.entity-type {
+    font-weight: bold;
+    color: #7f8c8d;
+    margin-right: 0.25rem;
+}
+
+.entity-link-mini {
+    color: #e74c3c;
+    text-decoration: none;
+    padding: 0.1rem 0.25rem;
+    border-radius: 3px;
+    transition: all 0.2s ease;
+}
+
+.entity-link-mini:hover {
+    background: #ffe5e5;
+    color: #c0392b;
 }
 </style>
 

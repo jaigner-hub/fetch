@@ -37,6 +37,11 @@ urlpatterns = [
     path('articles/topic/<str:topic>/', views.ArticlesByTopicView.as_view(), name='articles-by-topic'),
     path('articles/category/<str:category>/', views.ArticlesByCategoryView.as_view(), name='articles-by-category'),
     
+    # Entity filtering
+    path('articles/person/<str:person>/', views.ArticlesByPersonView.as_view(), name='articles-by-person'),
+    path('articles/organization/<str:organization>/', views.ArticlesByOrganizationView.as_view(), name='articles-by-organization'),
+    path('articles/location/<str:location>/', views.ArticlesByLocationView.as_view(), name='articles-by-location'),
+    
     # Generated Content URLs
     path('content/', views.GeneratedContentListView.as_view(), name='generated-content-list'),
     path('content/generate/', views.GenerateContentView.as_view(), name='generate-content'),

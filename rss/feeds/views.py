@@ -298,6 +298,90 @@ class ArticlesByCategoryView(LoginRequiredMixin, ListView):
         return context
 
 
+class ArticlesByPersonView(LoginRequiredMixin, ListView):
+    """View to show all articles mentioning a specific person."""
+    model = Article
+    template_name = 'feeds/articles_by_entity.html'
+    context_object_name = 'articles'
+    paginate_by = 25
+    
+    def get_queryset(self):
+        # Decode the person name from URL
+        person = unquote(self.kwargs['person'])
+        
+        # Get articles with this person in their entities
+        queryset = Article.objects.filter(
+            analysis__entities__people__icontains=person
+        ).select_related(
+            'feed__website', 'analysis'
+        ).order_by('-published_date')
+        
+        return queryset
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['entity_type'] = 'Person'
+        context['entity_name'] = unquote(self.kwargs['person'])
+        context['total_count'] = self.get_queryset().count()
+        return context
+
+
+class ArticlesByOrganizationView(LoginRequiredMixin, ListView):
+    """View to show all articles mentioning a specific organization."""
+    model = Article
+    template_name = 'feeds/articles_by_entity.html'
+    context_object_name = 'articles'
+    paginate_by = 25
+    
+    def get_queryset(self):
+        # Decode the organization name from URL
+        organization = unquote(self.kwargs['organization'])
+        
+        # Get articles with this organization in their entities
+        queryset = Article.objects.filter(
+            analysis__entities__organizations__icontains=organization
+        ).select_related(
+            'feed__website', 'analysis'
+        ).order_by('-published_date')
+        
+        return queryset
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['entity_type'] = 'Organization'
+        context['entity_name'] = unquote(self.kwargs['organization'])
+        context['total_count'] = self.get_queryset().count()
+        return context
+
+
+class ArticlesByLocationView(LoginRequiredMixin, ListView):
+    """View to show all articles mentioning a specific location."""
+    model = Article
+    template_name = 'feeds/articles_by_entity.html'
+    context_object_name = 'articles'
+    paginate_by = 25
+    
+    def get_queryset(self):
+        # Decode the location name from URL
+        location = unquote(self.kwargs['location'])
+        
+        # Get articles with this location in their entities
+        queryset = Article.objects.filter(
+            analysis__entities__locations__icontains=location
+        ).select_related(
+            'feed__website', 'analysis'
+        ).order_by('-published_date')
+        
+        return queryset
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['entity_type'] = 'Location'
+        context['entity_name'] = unquote(self.kwargs['location'])
+        context['total_count'] = self.get_queryset().count()
+        return context
+
+
 @login_required
 def home_view(request):
     from django.conf import settings
