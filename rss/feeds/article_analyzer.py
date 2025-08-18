@@ -149,21 +149,24 @@ class ArticleAnalyzer:
         prompt = f"""Analyze the following article and provide:
 1. A concise summary (2-3 sentences)
 2. Main topics/categories (max 5)
-3. Key entities mentioned (people, organizations, locations)
+3. Key named entities mentioned:
+   - People: Full names of actual people mentioned (e.g., "John Smith", "Emma Watson")
+   - Organizations: Company/organization names (e.g., "Netflix", "Marvel Studios", "FBI")
+   - Locations: Place names (e.g., "New York", "Hollywood", "United States")
 4. Sentiment (positive/negative/neutral)
 5. Keywords for SEO (max 10)
 
 Article Title: {article.title}
 Article Content: {clean_content[:4000]}  # Limit content to avoid token limits
 
-Please respond in JSON format:
+Please respond in JSON format. Extract actual entity names from the article:
 {{
-    "summary": "...",
+    "summary": "A 2-3 sentence summary",
     "topics": ["topic1", "topic2", ...],
     "entities": {{
-        "people": [...],
-        "organizations": [...],
-        "locations": [...]
+        "people": ["Person Name 1", "Person Name 2", ...],
+        "organizations": ["Company 1", "Organization 2", ...],
+        "locations": ["Place 1", "City 2", ...]
     }},
     "sentiment": "positive/negative/neutral",
     "keywords": ["keyword1", "keyword2", ...]
@@ -193,6 +196,7 @@ Please respond in JSON format:
                     
                     extracted_summary = ""
                     extracted_topics = []
+                    extracted_entities = {"people": [], "organizations": [], "locations": []}
                     
                     if summary_match:
                         extracted_summary = summary_match.group(1)
@@ -205,6 +209,22 @@ Please respond in JSON format:
                         topic_matches = re.findall(r'"([^"]+)"', topics_str)
                         extracted_topics = topic_matches[:5]  # Limit to 5 topics
                     
+                    # Try to extract entities
+                    people_match = re.search(r'"people"\s*:\s*\[([^\]]*)\]', result_text)
+                    if people_match and people_match.group(1):
+                        people_matches = re.findall(r'"([^"]+)"', people_match.group(1))
+                        extracted_entities["people"] = people_matches[:10]
+                    
+                    orgs_match = re.search(r'"organizations"\s*:\s*\[([^\]]*)\]', result_text)
+                    if orgs_match and orgs_match.group(1):
+                        org_matches = re.findall(r'"([^"]+)"', orgs_match.group(1))
+                        extracted_entities["organizations"] = org_matches[:10]
+                    
+                    locations_match = re.search(r'"locations"\s*:\s*\[([^\]]*)\]', result_text)
+                    if locations_match and locations_match.group(1):
+                        loc_matches = re.findall(r'"([^"]+)"', locations_match.group(1))
+                        extracted_entities["locations"] = loc_matches[:10]
+                    
                     # If we couldn't extract a summary, use the article's existing summary or title
                     if not extracted_summary:
                         extracted_summary = article.summary or article.title
@@ -212,7 +232,7 @@ Please respond in JSON format:
                     result = {
                         "summary": extracted_summary,
                         "topics": extracted_topics,
-                        "entities": {"people": [], "organizations": [], "locations": []},
+                        "entities": extracted_entities,
                         "sentiment": "neutral",
                         "keywords": []
                     }
