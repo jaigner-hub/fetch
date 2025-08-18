@@ -32,7 +32,7 @@
     <!-- Analysis Summary -->
     <div class="analysis-card">
         <h3>AI Summary</h3>
-        <p>{{ analysis.ai_summary|default:"No summary available" }}</p>
+        <p>{{ analysis.ai_summary|extract_json_summary|default:"No summary available" }}</p>
     </div>
 
     <!-- Topics -->
@@ -178,7 +178,13 @@
     <h3>Article Content</h3>
     <div class="article-content">
         {% if article.content %}
-            {{ article.content|truncatechars:1000|linebreaks }}
+            {% if article.content|slice:":1" == "<" %}
+                <!-- Content is HTML, render it -->
+                {{ article.content|truncatechars:1000|render_html_content }}
+            {% else %}
+                <!-- Content is plain text, use linebreaks -->
+                {{ article.content|truncatechars:1000|linebreaks }}
+            {% endif %}
             <p><a href="{% url 'feeds:article-detail' article.pk %}">Read full article...</a></p>
         {% else %}
             <p>{{ article.summary|default:"No content available" }}</p>

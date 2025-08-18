@@ -167,7 +167,7 @@
                 Analyzed {{ analysis.analyzed_at|timesince }} ago |
                 Topics: {{ analysis.topics|join_tag_terms }}
             </p>
-            <p class="summary">{{ analysis.ai_summary|truncatechars:150 }}</p>
+            <p class="summary">{{ analysis.ai_summary|extract_json_summary|truncatechars:150 }}</p>
         </div>
         {% endfor %}
     </div>
