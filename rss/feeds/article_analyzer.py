@@ -426,24 +426,55 @@ Please create an engaging article that:
             keygrip_result = self._call_keygrip_api(payload, headers)
             
             # Extract the generated content from Keygrip response
-            # Adjust based on actual Keygrip response structure
             generated_content = keygrip_result.get('response', '')
             
-            # Parse the content to extract title and body if structured
-            # For now, we'll use the first line as title if not structured
-            lines = generated_content.strip().split('\n')
-            title = lines[0] if lines else "Generated Article"
-            
-            # Remove title from content if it appears to be a heading
-            if lines and (lines[0].startswith('#') or len(lines[0]) < 100):
-                content = '\n'.join(lines[1:]).strip()
+            # Check if the response is a JSON string with structured content
+            if isinstance(generated_content, str) and generated_content.strip().startswith('{'):
+                try:
+                    import json
+                    parsed_content = json.loads(generated_content)
+                    # Extract fields from the parsed JSON
+                    title = parsed_content.get('title', 'Generated Article')
+                    content = parsed_content.get('content', '')
+                    subtitle = parsed_content.get('subtitle', '')
+                    summary = parsed_content.get('summary', '')
+                    
+                    # If no summary provided, create one from content
+                    if not summary and content:
+                        # Strip HTML tags for summary
+                        import re
+                        clean_text = re.sub('<[^<]+?>', '', content)
+                        summary = clean_text[:200] + '...' if len(clean_text) > 200 else clean_text
+                except json.JSONDecodeError:
+                    # Not valid JSON, treat as plain text
+                    lines = generated_content.strip().split('\n')
+                    title = lines[0] if lines else "Generated Article"
+                    
+                    # Remove title from content if it appears to be a heading
+                    if lines and (lines[0].startswith('#') or len(lines[0]) < 100):
+                        content = '\n'.join(lines[1:]).strip()
+                    else:
+                        content = generated_content
+                    subtitle = ''
+                    summary = content[:200] + '...' if len(content) > 200 else content
             else:
-                content = generated_content
+                # Plain text response
+                lines = generated_content.strip().split('\n')
+                title = lines[0] if lines else "Generated Article"
+                
+                # Remove title from content if it appears to be a heading
+                if lines and (lines[0].startswith('#') or len(lines[0]) < 100):
+                    content = '\n'.join(lines[1:]).strip()
+                else:
+                    content = generated_content
+                subtitle = ''
+                summary = content[:200] + '...' if len(content) > 200 else content
             
             result = {
                 'title': title.replace('#', '').strip(),
+                'subtitle': subtitle,
                 'content': content,
-                'summary': content[:200] + '...' if len(content) > 200 else content,
+                'summary': summary,
                 'topics': [],
                 'sources_used': [a.title for a in source_articles],
                 'media_items': media_items,
