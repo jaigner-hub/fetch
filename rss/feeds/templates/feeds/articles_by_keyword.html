@@ -1,0 +1,361 @@
+{% extends "feeds/base.html" %}
+{% load feed_filters %}
+
+{% block title %}Articles with keyword: {{ keyword }}{% endblock %}
+
+{% block content %}
+<div class="breadcrumb">
+    <a href="{% url 'feeds:analysis-dashboard' %}">Analysis Dashboard</a> /
+    <a href="{% url 'feeds:article-list' %}">Articles</a> /
+    Keyword: {{ keyword }}
+</div>
+
+<div class="page-header">
+    <h2>Articles with SEO Keyword: "{{ keyword }}"</h2>
+    <p class="subtitle">Found {{ total_count }} article{{ total_count|pluralize }}</p>
+</div>
+
+{% if articles %}
+<div class="articles-list">
+    {% for article in articles %}
+    <article class="article-card">
+        <div class="article-header">
+            <h3>
+                <a href="{% url 'feeds:article-detail' article.pk %}">
+                    {{ article.title }}
+                </a>
+            </h3>
+            <div class="article-meta">
+                <span class="source">{{ article.feed.website.name }}</span>
+                <span class="separator">•</span>
+                {% if article.published_date %}
+                <time datetime="{{ article.published_date|date:'c' }}">
+                    {{ article.published_date|date:"M d, Y H:i" }}
+                </time>
+                {% else %}
+                <span>Date not available</span>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="article-summary">
+            {% if article.analysis and article.analysis.ai_summary %}
+                {{ article.analysis.ai_summary|extract_json_summary|clean_html_content|truncatewords:50 }}
+            {% else %}
+                {{ article.summary|default:article.title|truncatewords:50 }}
+            {% endif %}
+        </div>
+        
+        {% if article.analysis %}
+        <div class="article-analysis-info">
+            {% if article.analysis.keywords %}
+            <div class="keywords-section">
+                <span class="label">SEO Keywords:</span>
+                <div class="keyword-list">
+                    {% for kw in article.analysis.keywords|slice:":8" %}
+                    <a href="{% url 'feeds:articles-by-keyword' keyword=kw %}" 
+                       class="keyword-tag {% if kw == keyword %}current{% endif %}">
+                        {{ kw }}
+                    </a>
+                    {% endfor %}
+                    {% if article.analysis.keywords|length > 8 %}
+                    <span class="more-indicator">+{{ article.analysis.keywords|length|add:"-8" }} more</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+            
+            {% if article.analysis.topics %}
+            <div class="topics-section">
+                <span class="label">Topics:</span>
+                {% for topic in article.analysis.topics|slice:":3" %}
+                <a href="{% url 'feeds:articles-by-topic' topic=topic %}" class="tag tag-topic">{{ topic }}</a>
+                {% endfor %}
+            </div>
+            {% endif %}
+            
+            {% if article.analysis.sentiment %}
+            <div class="sentiment-section">
+                <span class="label">Sentiment:</span>
+                <span class="sentiment sentiment-{{ article.analysis.sentiment }}">
+                    {{ article.analysis.sentiment|title }}
+                </span>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+        
+        <div class="article-actions">
+            <a href="{% url 'feeds:article-analysis-detail' article.pk %}" class="btn btn-sm">
+                View Analysis
+            </a>
+            <a href="{{ article.url }}" target="_blank" class="btn btn-sm btn-secondary">
+                Original Article
+            </a>
+        </div>
+    </article>
+    {% endfor %}
+</div>
+
+<!-- Pagination -->
+{% if is_paginated %}
+<div class="pagination">
+    <span class="page-links">
+        {% if page_obj.has_previous %}
+        <a href="?page=1">« First</a>
+        <a href="?page={{ page_obj.previous_page_number }}">Previous</a>
+        {% endif %}
+        
+        <span class="current">
+            Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+        </span>
+        
+        {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}">Next</a>
+        <a href="?page={{ page_obj.paginator.num_pages }}">Last »</a>
+        {% endif %}
+    </span>
+</div>
+{% endif %}
+
+{% else %}
+<div class="alert alert-info">
+    <h3>No Articles Found</h3>
+    <p>No articles with the keyword "{{ keyword }}" were found in the analyzed articles.</p>
+    <p>This could mean:</p>
+    <ul>
+        <li>No articles have been analyzed yet that contain this keyword</li>
+        <li>The keyword extraction may have missed this term</li>
+        <li>Try analyzing more articles to find matches</li>
+    </ul>
+    <a href="{% url 'feeds:analysis-dashboard' %}" class="btn btn-primary">Back to Analysis Dashboard</a>
+</div>
+{% endif %}
+
+<style>
+.breadcrumb {
+    margin-bottom: 1rem;
+    color: #666;
+}
+
+.breadcrumb a {
+    color: #3498db;
+    text-decoration: none;
+}
+
+.page-header {
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #ecf0f1;
+}
+
+.page-header h2 {
+    margin-bottom: 0.5rem;
+}
+
+.subtitle {
+    color: #7f8c8d;
+    font-size: 1.1rem;
+}
+
+.articles-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.article-card {
+    background: white;
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transition: box-shadow 0.3s ease;
+}
+
+.article-card:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.article-header h3 {
+    margin: 0 0 0.5rem 0;
+}
+
+.article-header h3 a {
+    color: #2c3e50;
+    text-decoration: none;
+}
+
+.article-header h3 a:hover {
+    color: #3498db;
+}
+
+.article-meta {
+    color: #7f8c8d;
+    font-size: 0.9rem;
+}
+
+.separator {
+    margin: 0 0.5rem;
+}
+
+.article-summary {
+    margin: 1rem 0;
+    color: #555;
+    line-height: 1.6;
+}
+
+.article-analysis-info {
+    margin: 1rem 0;
+    padding-top: 1rem;
+    border-top: 1px solid #ecf0f1;
+}
+
+.keywords-section, .topics-section, .sentiment-section {
+    margin: 0.5rem 0;
+}
+
+.label {
+    color: #7f8c8d;
+    font-size: 0.85rem;
+    margin-right: 0.5rem;
+    font-weight: 600;
+}
+
+.keyword-list {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    align-items: center;
+}
+
+.keyword-tag {
+    display: inline-block;
+    padding: 0.3rem 0.6rem;
+    background: #9b59b6;
+    color: white;
+    border-radius: 15px;
+    font-size: 0.85rem;
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.keyword-tag:hover {
+    background: #8e44ad;
+    transform: translateY(-2px);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.keyword-tag.current {
+    background: #e74c3c;
+    font-weight: bold;
+    box-shadow: 0 2px 6px rgba(231, 76, 60, 0.3);
+}
+
+.more-indicator {
+    color: #95a5a6;
+    font-size: 0.8rem;
+    font-style: italic;
+}
+
+.tag {
+    display: inline-block;
+    padding: 0.25rem 0.5rem;
+    margin-right: 0.25rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    text-decoration: none;
+}
+
+.tag-topic {
+    background: #3498db;
+    color: white;
+}
+
+.tag-topic:hover {
+    background: #2980b9;
+}
+
+.sentiment {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.sentiment-positive {
+    background: #d4edda;
+    color: #155724;
+}
+
+.sentiment-negative {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.sentiment-neutral {
+    background: #e2e3e5;
+    color: #383d41;
+}
+
+.article-actions {
+    margin-top: 1rem;
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn-sm {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.9rem;
+}
+
+.btn-secondary {
+    background: #95a5a6;
+}
+
+.btn-secondary:hover {
+    background: #7f8c8d;
+}
+
+.alert {
+    padding: 2rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin: 2rem 0;
+}
+
+.alert-info {
+    background: #d1ecf1;
+    border: 1px solid #bee5eb;
+    color: #0c5460;
+}
+
+.alert ul {
+    margin: 1rem 0;
+    padding-left: 1.5rem;
+}
+
+.pagination {
+    margin-top: 2rem;
+    padding: 1rem;
+    text-align: center;
+    background: white;
+    border-radius: 8px;
+}
+
+.page-links a {
+    margin: 0 0.5rem;
+    color: #3498db;
+    text-decoration: none;
+}
+
+.page-links a:hover {
+    text-decoration: underline;
+}
+
+.current {
+    margin: 0 1rem;
+    font-weight: bold;
+}
+</style>
+{% endblock %}

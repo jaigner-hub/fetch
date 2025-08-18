@@ -84,7 +84,7 @@
         {% if analysis.keywords %}
         <div class="tag-list">
             {% for keyword in analysis.keywords %}
-            <span class="tag tag-small">{{ keyword }}</span>
+            <a href="{% url 'feeds:articles-by-keyword' keyword=keyword %}" class="tag tag-small keyword-link">{{ keyword }}</a>
             {% endfor %}
         </div>
         {% else %}
@@ -312,6 +312,20 @@
 .tag-small {
     padding: 0.3rem 0.6rem;
     font-size: 0.85rem;
+}
+
+.keyword-link {
+    background: #9b59b6;
+    color: white;
+    text-decoration: none;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.keyword-link:hover {
+    background: #8e44ad;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
 }
 
 .tag-link {

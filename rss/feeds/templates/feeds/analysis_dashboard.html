@@ -191,6 +191,15 @@
                 {% endif %}
             </p>
             {% endif %}
+            {% if analysis.keywords %}
+            <p class="keywords-mini">
+                <span class="keyword-type">Keywords:</span>
+                {% for keyword in analysis.keywords|slice:":5" %}
+                    <a href="{% url 'feeds:articles-by-keyword' keyword=keyword %}" class="keyword-link-mini">{{ keyword }}</a>{% if not forloop.last %}, {% endif %}
+                {% endfor %}
+                {% if analysis.keywords|length > 5 %}...{% endif %}
+            </p>
+            {% endif %}
             <p class="summary">{{ analysis.ai_summary|extract_json_summary|truncatechars:150 }}</p>
         </div>
         {% endfor %}
@@ -416,6 +425,31 @@
 .entity-link-mini:hover {
     background: #ffe5e5;
     color: #c0392b;
+}
+
+.keywords-mini {
+    font-size: 0.85rem;
+    color: #666;
+    margin: 0.25rem 0;
+}
+
+.keyword-type {
+    font-weight: bold;
+    color: #8e44ad;
+    margin-right: 0.25rem;
+}
+
+.keyword-link-mini {
+    color: #9b59b6;
+    text-decoration: none;
+    padding: 0.1rem 0.25rem;
+    border-radius: 3px;
+    transition: all 0.2s ease;
+}
+
+.keyword-link-mini:hover {
+    background: #f4ecf7;
+    color: #8e44ad;
 }
 </style>
 

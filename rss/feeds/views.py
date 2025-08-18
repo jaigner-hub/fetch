@@ -382,6 +382,33 @@ class ArticlesByLocationView(LoginRequiredMixin, ListView):
         return context
 
 
+class ArticlesByKeywordView(LoginRequiredMixin, ListView):
+    """View to show all articles with a specific SEO keyword."""
+    model = Article
+    template_name = 'feeds/articles_by_keyword.html'
+    context_object_name = 'articles'
+    paginate_by = 25
+    
+    def get_queryset(self):
+        # Decode the keyword from URL
+        keyword = unquote(self.kwargs['keyword'])
+        
+        # Get articles with this keyword in their analysis
+        queryset = Article.objects.filter(
+            analysis__keywords__icontains=keyword
+        ).select_related(
+            'feed__website', 'analysis'
+        ).order_by('-published_date')
+        
+        return queryset
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['keyword'] = unquote(self.kwargs['keyword'])
+        context['total_count'] = self.get_queryset().count()
+        return context
+
+
 @login_required
 def home_view(request):
     from django.conf import settings
