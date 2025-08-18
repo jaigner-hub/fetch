@@ -197,9 +197,9 @@
     <a href="{% url 'feeds:generate-content' %}?source={{ article.pk }}" class="btn btn-primary">
         Use in Content Generation
     </a>
-    <button onclick="analyzeArticle({{ article.pk }})" class="btn">
+    <a href="{% url 'feeds:analyze-article' article.pk %}?force=true" class="btn">
         Re-analyze
-    </button>
+    </a>
     <a href="{% url 'feeds:article-detail' article.pk %}" class="btn">
         View Article Details
     </a>

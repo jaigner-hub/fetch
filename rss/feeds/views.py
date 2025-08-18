@@ -688,9 +688,17 @@ def analyze_article_view(request, pk):
     """Trigger article analysis."""
     article = get_object_or_404(Article, pk=pk)
     
-    if hasattr(article, 'analysis'):
-        messages.info(request, "Article has already been analyzed.")
+    # Check if force re-analyze is requested
+    force = request.GET.get('force') == 'true' or request.POST.get('force') == 'true'
+    
+    if hasattr(article, 'analysis') and not force:
+        messages.info(request, "Article has already been analyzed. Add ?force=true to re-analyze.")
     else:
+        if hasattr(article, 'analysis') and force:
+            # Delete existing analysis to allow re-analysis
+            article.analysis.delete()
+            messages.info(request, "Re-analyzing article with updated extraction...")
+        
         # Queue for analysis
         analyze_article_async.delay(article.id, find_similar=True)
         messages.success(request, "Article queued for analysis. This may take a moment.")

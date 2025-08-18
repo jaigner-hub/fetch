@@ -653,9 +653,9 @@ def analyze_article_async(self, article_id, find_similar=True):
         
         article = Article.objects.get(id=article_id)
         
-        # Check if already analyzed
+        # Check if already analyzed (this check might be bypassed if analysis was deleted for re-analysis)
         if hasattr(article, 'analysis'):
-            logger.info(f"Article {article_id} already analyzed")
+            logger.info(f"Article {article_id} already analyzed, skipping")
             return "Article already analyzed"
         
         # Update progress: Analyzing
