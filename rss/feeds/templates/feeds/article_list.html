@@ -53,7 +53,15 @@
             <td>{{ article.feed.website.name }}</td>
             <td>{{ article.feed.title|default:article.feed.feed_url|truncatechars:30 }}</td>
             <td>{{ article.author|default:"-" }}</td>
-            <td>{{ article.published_date|date:"Y-m-d H:i"|default:article.fetched_at|date:"Y-m-d H:i" }}</td>
+            <td>
+                {% if article.published_date %}
+                    {{ article.published_date|date:"Y-m-d H:i" }}
+                {% elif article.fetched_at %}
+                    {{ article.fetched_at|date:"Y-m-d H:i" }}
+                {% else %}
+                    -
+                {% endif %}
+            </td>
             <td>
                 <a href="{% url 'feeds:article-detail' article.pk %}" class="btn btn-sm">View</a>
                 <a href="{% url 'feeds:article-analysis-detail' article.pk %}" class="btn btn-sm">Analysis</a>

@@ -10,7 +10,7 @@
     <strong>Website:</strong> <a href="{% url 'feeds:website-detail' article.feed.website.pk %}">{{ article.feed.website.name }}</a><br>
     <strong>Feed:</strong> <a href="{% url 'feeds:feed-detail' article.feed.pk %}">{{ article.feed.title|default:article.feed.feed_url|truncatechars:60 }}</a><br>
     <strong>Author:</strong> {{ article.author|default:"Unknown" }}<br>
-    <strong>Published:</strong> {{ article.published_date|date:"Y-m-d H:i"|default:"Unknown" }}<br>
+    <strong>Published:</strong> {% if article.published_date %}{{ article.published_date|date:"Y-m-d H:i" }}{% else %}Unknown{% endif %}<br>
     <strong>Fetched:</strong> {{ article.fetched_at|date:"Y-m-d H:i" }}<br>
     <strong>Original URL:</strong> <a href="{{ article.url }}" target="_blank">{{ article.url|truncatechars:80 }}</a>
 </div>

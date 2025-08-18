@@ -148,7 +148,15 @@
                 </a>
             </td>
             <td>{{ article.author|default:"-" }}</td>
-            <td>{{ article.published_date|date:"Y-m-d H:i"|default:article.fetched_at|date:"Y-m-d H:i" }}</td>
+            <td>
+                {% if article.published_date %}
+                    {{ article.published_date|date:"Y-m-d H:i" }}
+                {% elif article.fetched_at %}
+                    {{ article.fetched_at|date:"Y-m-d H:i" }}
+                {% else %}
+                    -
+                {% endif %}
+            </td>
             <td>{{ article.feed.title|default:article.feed.feed_url|truncatechars:30 }}</td>
         </tr>
         {% empty %}
