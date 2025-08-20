@@ -163,7 +163,7 @@ class Article(models.Model):
                 detector = SimilarityDetector()
                 detected_similar = detector.find_similar_articles(
                     self,
-                    threshold=0.4,  # Lower threshold for more results
+                    threshold=0.3,  # Lower threshold for more results
                     max_results=max_results * 2,  # Get more to filter
                     days_back=days_back
                 )
@@ -177,7 +177,9 @@ class Article(models.Model):
                             break
             except Exception as e:
                 # If similarity detector fails, continue with what we have
-                pass
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Error finding similar articles for {self.id}: {str(e)}")
         
         return similar_articles[:max_results]
 
