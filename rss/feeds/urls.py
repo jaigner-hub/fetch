@@ -34,16 +34,16 @@ urlpatterns = [
     path('analysis/batch/', views.batch_analyze_view, name='batch-analyze'),
     
     # Topic and Category filtering
-    path('articles/topic/<str:topic>/', views.ArticlesByTopicView.as_view(), name='articles-by-topic'),
-    path('articles/category/<str:category>/', views.ArticlesByCategoryView.as_view(), name='articles-by-category'),
+    path('articles/topic/<path:topic>/', views.ArticlesByTopicView.as_view(), name='articles-by-topic'),
+    path('articles/category/<path:category>/', views.ArticlesByCategoryView.as_view(), name='articles-by-category'),
     
     # Entity filtering
-    path('articles/person/<str:person>/', views.ArticlesByPersonView.as_view(), name='articles-by-person'),
-    path('articles/organization/<str:organization>/', views.ArticlesByOrganizationView.as_view(), name='articles-by-organization'),
-    path('articles/location/<str:location>/', views.ArticlesByLocationView.as_view(), name='articles-by-location'),
+    path('articles/person/<path:person>/', views.ArticlesByPersonView.as_view(), name='articles-by-person'),
+    path('articles/organization/<path:organization>/', views.ArticlesByOrganizationView.as_view(), name='articles-by-organization'),
+    path('articles/location/<path:location>/', views.ArticlesByLocationView.as_view(), name='articles-by-location'),
     
     # Keyword filtering
-    path('articles/keyword/<str:keyword>/', views.ArticlesByKeywordView.as_view(), name='articles-by-keyword'),
+    path('articles/keyword/<path:keyword>/', views.ArticlesByKeywordView.as_view(), name='articles-by-keyword'),
     
     # Generated Content URLs
     path('content/', views.GeneratedContentListView.as_view(), name='generated-content-list'),
