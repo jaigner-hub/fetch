@@ -240,6 +240,20 @@ class ArticleDetailView(LoginRequiredMixin, DetailView):
     model = Article
     template_name = 'feeds/article_detail.html'
     context_object_name = 'article'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        
+        # Get similar articles
+        similar_articles_with_scores = self.object.get_similar_articles(max_results=8)
+        
+        # Extract just the articles for the template (scores are optional)
+        context['similar_articles'] = [article for article, scores in similar_articles_with_scores]
+        
+        # Check if article has been analyzed
+        context['has_analysis'] = hasattr(self.object, 'analysis')
+        
+        return context
 
 
 class ArticlesByTopicView(LoginRequiredMixin, ListView):

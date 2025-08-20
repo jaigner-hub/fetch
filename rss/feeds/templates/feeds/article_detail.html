@@ -152,6 +152,69 @@
     <a href="{% url 'feeds:article-list' %}" class="btn btn-secondary">Back to Articles</a>
 </div>
 
+<!-- Similar Articles Section -->
+{% if similar_articles %}
+<div style="margin-top: 3rem; border-top: 2px solid #ecf0f1; padding-top: 2rem;">
+    <h3>Similar Articles</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1.5rem; margin-top: 1rem;">
+        {% for similar_article in similar_articles %}
+        <div style="background: #f8f9fa; border-radius: 8px; padding: 1rem; border: 1px solid #dee2e6; transition: box-shadow 0.3s;">
+            <h4 style="margin-top: 0; margin-bottom: 0.5rem; font-size: 1.1rem;">
+                <a href="{% url 'feeds:article-detail' similar_article.pk %}" style="color: #2c3e50; text-decoration: none;">
+                    {{ similar_article.title|truncatechars:80 }}
+                </a>
+            </h4>
+            <div style="color: #6c757d; font-size: 0.9rem; margin-bottom: 0.5rem;">
+                <strong>{{ similar_article.feed.website.name }}</strong>
+                {% if similar_article.published_date %}
+                • {{ similar_article.published_date|date:"M d, Y" }}
+                {% endif %}
+            </div>
+            {% if similar_article.summary %}
+            <p style="font-size: 0.9rem; color: #495057; margin-bottom: 0.5rem;">
+                {{ similar_article.summary|striptags|truncatechars:150 }}
+            </p>
+            {% endif %}
+            <a href="{% url 'feeds:article-detail' similar_article.pk %}" style="color: #3498db; font-size: 0.9rem; text-decoration: none;">
+                Read more →
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <!-- Actions for similar articles -->
+    <div style="margin-top: 1.5rem; padding: 1rem; background: #e3f2fd; border-radius: 8px; border: 1px solid #90caf9;">
+        <p style="margin: 0 0 0.5rem 0; color: #1976d2;">
+            <strong>Actions:</strong>
+        </p>
+        <div>
+            {% if not has_analysis %}
+            <a href="{% url 'feeds:analyze-article' article.pk %}" class="btn btn-primary" style="margin-right: 0.5rem;">
+                Analyze This Article
+            </a>
+            {% else %}
+            <a href="{% url 'feeds:article-analysis-detail' article.pk %}" class="btn btn-secondary" style="margin-right: 0.5rem;">
+                View Analysis
+            </a>
+            {% endif %}
+            <a href="{% url 'feeds:generate-content' %}?source={{ article.pk }}" class="btn btn-success">
+                Generate Content from Similar Articles
+            </a>
+        </div>
+    </div>
+</div>
+{% else %}
+<div style="margin-top: 3rem; border-top: 2px solid #ecf0f1; padding-top: 2rem;">
+    <h3>Similar Articles</h3>
+    <div style="padding: 2rem; background: #f8f9fa; border-radius: 8px; text-align: center;">
+        <p style="color: #6c757d; margin-bottom: 1rem;">No similar articles found yet.</p>
+        <a href="{% url 'feeds:analyze-article' article.pk %}" class="btn btn-primary">
+            Analyze Article to Find Similar Content
+        </a>
+    </div>
+</div>
+{% endif %}
+
 {% if article.raw_data %}
 <details style="margin-top: 2rem;">
     <summary style="cursor: pointer; padding: 0.5rem; background: #ecf0f1; border-radius: 4px;">
@@ -160,4 +223,11 @@
     <pre style="background: #2c3e50; color: #ecf0f1; padding: 1rem; border-radius: 4px; overflow-x: auto; margin-top: 0.5rem;">{{ article.raw_data|pprint }}</pre>
 </details>
 {% endif %}
+
+<style>
+/* Hover effect for similar article cards */
+div[style*="transition: box-shadow 0.3s"]:hover {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+</style>
 {% endblock %}

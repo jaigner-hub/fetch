@@ -142,6 +142,44 @@ class Article(models.Model):
         content_to_hash = f"{title}{content}{summary}"
         content_hash = hashlib.sha256(content_to_hash.encode()).hexdigest()
         return cls.objects.filter(url=url, content_hash=content_hash).exists()
+    
+    def get_similar_articles(self, max_results=10, days_back=30):
+        """Get similar articles using both analysis and similarity detection."""
+        similar_articles = []
+        seen_ids = {self.id}  # Track seen IDs to avoid duplicates
+        
+        # First, check if this article has been analyzed
+        if hasattr(self, 'analysis') and self.analysis.similar_articles.exists():
+            # Get similar articles from analysis
+            for article in self.analysis.similar_articles.select_related('feed__website').all()[:max_results]:
+                if article.id not in seen_ids:
+                    similar_articles.append((article, None))  # No scores from analysis
+                    seen_ids.add(article.id)
+        
+        # If we need more results, use similarity detector
+        if len(similar_articles) < max_results:
+            try:
+                from .similarity_detector import SimilarityDetector
+                detector = SimilarityDetector()
+                detected_similar = detector.find_similar_articles(
+                    self,
+                    threshold=0.4,  # Lower threshold for more results
+                    max_results=max_results * 2,  # Get more to filter
+                    days_back=days_back
+                )
+                
+                # Add detected similar articles
+                for article, scores in detected_similar:
+                    if article.id not in seen_ids:
+                        similar_articles.append((article, scores))
+                        seen_ids.add(article.id)
+                        if len(similar_articles) >= max_results:
+                            break
+            except Exception as e:
+                # If similarity detector fails, continue with what we have
+                pass
+        
+        return similar_articles[:max_results]
 
 
 class ArticleAnalysis(models.Model):
