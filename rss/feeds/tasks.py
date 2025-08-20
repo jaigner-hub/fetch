@@ -457,9 +457,20 @@ def fetch_sitemap_content(feed_id):
                     # Fetch the article content
                     article_content = fetcher.fetch_article_content(url)
                     
-                    if article_content:
+                    # Skip if content is too short (likely not a real article)
+                    if article_content and len(article_content) > 1000:
                         # Extract metadata from the page
                         metadata = fetcher.extract_metadata(url)
+                        
+                        # Additional check: ensure there's substantial text content
+                        from bs4 import BeautifulSoup
+                        soup_check = BeautifulSoup(article_content, 'html.parser')
+                        text_content = soup_check.get_text(strip=True)
+                        
+                        # Skip if text content is too short
+                        if len(text_content) < 300:
+                            logger.info(f"Skipping {url} - insufficient text content ({len(text_content)} chars)")
+                            continue
                         
                         # Create new article
                         # Convert datetime to timezone-aware if needed

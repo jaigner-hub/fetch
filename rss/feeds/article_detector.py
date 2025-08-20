@@ -104,6 +104,10 @@ class ArticleDetector:
         r'/page/\d+',           # Pagination
         r'/search/',
         r'/results/',
+        r'/browse/',
+        r'/listing[s]?/',
+        r'/topic[s]?/$',        # Topic listing pages
+        r'/section[s]?/$',      # Section pages
         
         # Media galleries (unless article)
         r'/gallery/',

@@ -402,30 +402,41 @@ class ContentFetcher:
                 # Just get the inner HTML as string - simpler and faster
                 content_html = str(content_elem)
                 
-                if content_html and len(content_html) > 200:
-                    return content_html
+                # Require substantial content (at least 1000 chars of HTML)
+                if content_html and len(content_html) > 1000:
+                    # Also check text content length to ensure it's not just HTML tags
+                    text_content = content_elem.get_text(strip=True)
+                    if len(text_content) > 300:  # At least 300 chars of actual text
+                        return content_html
         
         # Fallback: try to find the largest concentration of paragraphs
         all_paragraphs = soup.find_all('p')
-        if all_paragraphs and len(all_paragraphs) > 3:
+        if all_paragraphs and len(all_paragraphs) > 5:  # Require at least 5 paragraphs
             # Build HTML from paragraphs
             html_parts = []
+            total_text_length = 0
             for p in all_paragraphs:
-                if len(p.get_text(strip=True)) > 50:  # Ignore short paragraphs
+                p_text = p.get_text(strip=True)
+                if len(p_text) > 50:  # Ignore short paragraphs
                     html_parts.append(str(p))
+                    total_text_length += len(p_text)
             
-            if html_parts:
+            # Require at least 500 chars of actual text content
+            if html_parts and total_text_length > 500:
                 combined_html = '\n'.join(html_parts)
-                if len(combined_html) > 500:
+                if len(combined_html) > 1000:  # Increased minimum HTML length
                     return f'<div>{combined_html}</div>'
         
         # Last resort: get text content if no HTML can be extracted
         text = soup.get_text(separator='\n', strip=True)
-        if text and len(text) > 500:
+        if text and len(text) > 1000:  # Increased minimum to 1000 chars
             # Convert plain text to basic HTML
             paragraphs = [f'<p>{p}</p>' for p in text.split('\n\n') if len(p) > 50]
-            if paragraphs:
-                return '\n'.join(paragraphs)
+            # Only return if we have substantial content
+            if paragraphs and len(paragraphs) > 3:
+                combined = '\n'.join(paragraphs)
+                if len(combined) > 1000:
+                    return combined
         
         return None
     
