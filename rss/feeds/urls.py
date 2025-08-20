@@ -55,6 +55,7 @@ urlpatterns = [
     path('api/stats/', views.feed_stats_api, name='api-stats'),
     path('api/websites/<int:pk>/fetch-progress/', views.fetch_progress_api, name='api-fetch-progress'),
     path('api/websites/<int:pk>/discover-progress/', views.discover_progress_api, name='api-discover-progress'),
+    path('api/websites/<int:website_id>/fetch/', api_views.manual_fetch_website, name='api-manual-fetch'),
     
     # Article Analysis API endpoints
     path('api/articles/<int:article_id>/analyze/', api_views.analyze_article, name='api-analyze-article'),

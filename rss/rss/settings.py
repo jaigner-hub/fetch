@@ -170,4 +170,5 @@ CELERY_BEAT_SCHEDULE = {
 }
 
 # Anthropic Claude API Configuration
-ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '')
+# Hardcoded for Apache/WSGI compatibility
+ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', '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')

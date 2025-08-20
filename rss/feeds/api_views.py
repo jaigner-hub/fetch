@@ -610,3 +610,47 @@ def generate_content_with_progress(request):
         'task_id': task.id,
         'message': 'Content generation started'
     })
+
+
+@login_required
+@require_http_methods(["POST"])
+def manual_fetch_website(request, website_id):
+    """
+    Manually trigger content fetching for a website.
+    
+    POST /api/websites/{website_id}/fetch/
+    """
+    from .tasks import fetch_all_website_content
+    
+    website = get_object_or_404(Website, id=website_id)
+    
+    # Check if website is active
+    if not website.active:
+        return JsonResponse({
+            'status': 'error',
+            'message': 'Website is not active'
+        }, status=400)
+    
+    try:
+        # Queue the fetch task
+        task = fetch_all_website_content.delay(website.id)
+        
+        # Update last fetch time
+        website.last_auto_fetch = timezone.now()
+        website.save()
+        
+        return JsonResponse({
+            'status': 'success',
+            'message': f'Fetching content from {website.name}',
+            'task_id': task.id,
+            'website': {
+                'id': website.id,
+                'name': website.name,
+                'feed_count': website.feeds.filter(active=True).count()
+            }
+        })
+    except Exception as e:
+        return JsonResponse({
+            'status': 'error',
+            'message': str(e)
+        }, status=500)

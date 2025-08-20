@@ -396,6 +396,16 @@ def fetch_sitemap_content(feed_id):
         
         logger.info(f"Found {len(sitemap_urls)} URLs in sitemap {feed.feed_url}")
         
+        # Filter URLs to only get articles using ArticleDetector
+        from .article_detector import ArticleDetector
+        detector = ArticleDetector()
+        
+        # Get domain from feed's website
+        domain = feed.website.url if feed.website else None
+        article_urls = detector.get_article_urls_from_sitemap(sitemap_urls, domain)
+        
+        logger.info(f"Filtered to {len(article_urls)} article URLs from {len(sitemap_urls)} total URLs")
+        
         new_articles = 0
         updated_articles = 0
         processed_urls = 0
@@ -427,14 +437,10 @@ def fetch_sitemap_content(feed_id):
         # News sitemaps get more URLs since they're recent
         max_urls_to_process = 30 if is_news_sitemap else 10
         
-        # Process each URL from the sitemap
-        for url in sitemap_urls[:max_urls_to_process]:
+        # Process each URL from the filtered article URLs
+        for url in article_urls[:max_urls_to_process]:
             try:
-                # Check if this looks like an article URL (basic heuristic)
-                # Skip obvious non-article pages
-                skip_patterns = ['/tag/', '/category/', '/author/', '/page/', '.xml', '.pdf', '/feed/', '/rss/']
-                if any(pattern in url.lower() for pattern in skip_patterns):
-                    continue
+                # No need for basic filtering - ArticleDetector already did it
                 
                 processed_urls += 1
                 

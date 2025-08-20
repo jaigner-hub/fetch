@@ -1,122 +1,365 @@
-# RSS/XML Feed Aggregator - Project Guidelines
+# Article Aggregator System - Complete Project Guidelines
 
 ## Project Overview
-This is an RSS/XML feed aggregator designed to monitor news websites and automatically harvest new content. The system discovers RSS/XML feeds from any website, continuously monitors them for new articles, and ingests the full content into a database for future processing. The system supports complex news sites with multiple category-specific RSS feeds (like Hollywood Reporter) and handles deduplication when articles appear in multiple feeds.
+This is an advanced article aggregation system that monitors news and content-rich websites to automatically discover and harvest new articles. The system intelligently identifies RSS feeds AND XML sitemaps from any domain, continuously monitors them for new content articles (not just any pages), and ingests the full article content with rich media for future processing and content generation.
 
-## Core Functionality
-1. **Feed Discovery**: Automatically find RSS/XML feeds from any given website URL
-2. **Content Monitoring**: Continuously check feeds for new articles at regular intervals
-3. **Article Ingestion**: When new content is detected:
-   - Fetch the full HTML of the article
-   - Clean and extract the main text content
-   - Extract metadata (title, author, publish date, tags, etc.)
-   - Store all information in the database
+## Core Mission
+**Phase 1: Article Discovery & Ingestion**
+- Discover RSS feeds and XML sitemaps from any given domain
+- Continuously monitor for NEW article content (not general pages)
+- Fetch and store complete article content with all rich media
+- Structure and clean data for downstream processing
 
-## Technical Architecture
+**Phase 2: Article Clustering & Analysis**
+- Identify articles covering the same topic/event within 48-hour windows
+- Group related articles from multiple sources
+- Extract common themes, entities, and narratives
+
+**Phase 3: Content Generation**
+- Generate new articles using multiple related sources as input
+- Combine perspectives from different outlets on the same story
+- Create unique, synthesized content from aggregated sources
+
+## System Architecture
 
 ### Key Components
-- **Feed Scanner**: Discovers and validates RSS/XML feeds from websites
-- **Content Monitor**: Polls feeds at configurable intervals for new content
-- **HTML Processor**: Cleans HTML and extracts article text and metadata
-- **Database Layer**: Stores feeds, articles, and metadata for future processing
 
-### Database Schema Considerations
-- **websites**: Store base website URLs and names
-- **feeds**: Store discovered feed URLs, last check time, update frequency, linked to websites
-- **articles**: Store article content, cleaned text, metadata, processing status
-  - Includes `additional_feeds` M2M field for tracking articles appearing in multiple feeds
-- **feed_items**: Track individual feed entries to detect new content
-- **metadata**: Store extracted metadata in structured format
-- **fetch_logs**: Track feed fetching history and statistics
+#### 1. Feed & Sitemap Discovery
+- **RSS/Atom Discovery**: Find all RSS and Atom feeds from a website
+- **Sitemap Discovery**: Locate and parse XML sitemaps (including nested sitemap indexes)
+- **Article URL Detection**: Identify which URLs in sitemaps are actual articles vs other pages
+- **Claude AI Integration**: Use AI to intelligently discover feeds when traditional methods fail
 
-## Development Guidelines
+#### 2. Content Monitoring & Filtering
+- **Smart Polling**: Adaptive intervals based on site update frequency
+- **Article Detection**: Filter sitemap URLs to only fetch actual news/content articles
+- **Deduplication**: Handle articles appearing in multiple feeds/sitemaps
+- **New Content Detection**: Track what's already been fetched to avoid duplicates
 
-### When Adding Features
-1. Maintain separation between feed discovery, monitoring, and content processing
-2. Ensure all scraped content is properly cleaned and sanitized
-3. Implement rate limiting to respect source websites
-4. Handle errors gracefully (invalid feeds, unreachable sites, parsing failures)
+#### 3. Article Ingestion Pipeline
+- **Full HTML Fetch**: Download complete article HTML
+- **Content Extraction**: Clean extraction of main article text (remove ads, navigation, etc.)
+- **Metadata Parsing**: Extract all available metadata:
+  - Title, author, publish date, update date
+  - Categories, tags, keywords
+  - OpenGraph, JSON-LD, meta tags
+- **Rich Media Handling**:
+  - Download and store hero/featured images
+  - Extract and store all embedded images
+  - Capture video URLs and thumbnails
+  - Prepare media for S3 bucket upload
 
-### Testing Requirements
-- Test with various RSS versions (RSS 2.0, Atom, RDF)
-- Verify HTML cleaning works with different article structures
-- Test handling of rate limits and network failures
-- Ensure duplicate article detection works correctly
+#### 4. Similarity Detection & Clustering
+- **48-Hour Windows**: Group articles published within same time period
+- **Multi-Metric Similarity**:
+  - Title similarity
+  - Content overlap
+  - Entity matching (people, companies, locations)
+  - Topic/category alignment
+- **Event Detection**: Identify when multiple outlets cover the same event/story
 
-### Performance Considerations
-- Implement efficient polling strategies (adaptive intervals based on feed update frequency)
-- Use background jobs/workers for content processing
-- Cache feed metadata to reduce unnecessary requests
-- Batch database operations where possible
+#### 5. Content Generation Pipeline
+- **Source Selection**: Choose related articles for synthesis
+- **Multi-Source Analysis**: Extract key facts from each source
+- **Content Creation**: Generate new article combining multiple perspectives
+- **Media Selection**: Choose best images/videos from source articles
+- **Attribution**: Track and credit all source articles
 
-## Common Tasks
+### Database Schema
 
-### Adding a New Feed Source
-1. Validate the feed URL is accessible and valid XML
-2. Parse feed to determine type and structure
-3. Store feed configuration with appropriate polling interval
-4. Initialize first content scan
+#### Core Models
+- **Website**: Base domains to monitor
+  - URL, name, active status
+  - Auto-fetch settings and intervals
+  - Last fetch timestamps
 
-### Adding Multiple Category Feeds for a Website
-For sites with many category-specific RSS feeds (e.g., Hollywood Reporter):
-1. Create a JSON file with all feed definitions
-2. Use the `add_multi_feeds` management command:
-   ```bash
-   python manage.py add_multi_feeds --website-url "https://example.com" \
-     --website-name "Example Site" --feeds-file feeds.json
-   ```
-3. The system automatically handles deduplication when articles appear in multiple feeds
+- **Feed**: RSS/Atom feeds and sitemaps
+  - Feed URL and type (RSS/ATOM/SITEMAP)
+  - Title, description
+  - Error tracking and retry logic
+  - Last successful fetch
 
-### Processing New Articles
-1. Compare feed items against database to identify new content
-2. Fetch full article HTML from source URL
-3. Extract and clean article text (remove ads, navigation, etc.)
-4. Parse metadata (OpenGraph tags, JSON-LD, meta tags)
-5. Store in database with appropriate timestamps and relationships
+- **Article**: Ingested content
+  - URL (unique), title, full content
+  - Cleaned text, summary
+  - Author, published date
+  - Content hash for duplicate detection
+  - Media assets (images, videos)
+  - Cross-feed tracking (M2M)
 
-### Monitoring and Maintenance
-- Log all feed check attempts and results
-- Track success/failure rates per feed
-- Implement alerting for consistently failing feeds
-- Provide metrics on article ingestion rate and processing time
+- **ArticleAnalysis**: AI analysis results
+  - AI-generated summary
+  - Topics, entities, sentiment
+  - SEO keywords
+  - Similar articles (M2M)
+  - Duplicate detection
 
-## Error Handling
-- **Invalid Feeds**: Log and mark as inactive after repeated failures
-- **Network Issues**: Implement exponential backoff for retries
-- **Parsing Failures**: Store raw content for manual review/reprocessing
-- **Rate Limiting**: Respect 429 responses and adjust polling frequency
+- **GeneratedContent**: New synthesized articles
+  - Generated title, content, summary
+  - Source articles used (M2M)
+  - Media items selected
+  - Generation parameters
+  - Publishing status
 
-## Security Considerations
-- Sanitize all HTML content before storage
-- Validate feed URLs to prevent SSRF attacks
-- Implement request timeouts to prevent hanging connections
-- Use User-Agent headers to identify the aggregator
+## Critical Implementation Details
+
+### Article Detection from Sitemaps
+Sitemaps contain ALL pages, not just articles. We must filter for actual content:
+
+#### URL Pattern Indicators (Articles):
+- Contains date patterns: `/2024/08/`, `/2024-08-20/`
+- News/article paths: `/news/`, `/article/`, `/story/`, `/post/`
+- Has article ID: `/p/12345`, `/-12345`, `/12345-title`
+- Category paths: `/movies/`, `/tv/`, `/entertainment/`
+
+#### URL Pattern Exclusions (Not Articles):
+- Static pages: `/about`, `/contact`, `/privacy`, `/terms`
+- Category listings: `/category/`, `/tag/`, `/author/`
+- Archives: `/archive/`, `/page/2`
+- Media galleries: `/gallery/`, `/photos/`
+
+#### Content-Type Verification:
+Before full fetch, check:
+- HEAD request for content-type
+- Check meta tags for article indicators
+- Verify OpenGraph type (article, news)
+
+### Media Storage Strategy
+
+#### Image Handling:
+1. Extract all image URLs from article
+2. Download images locally to `/media/images/{domain}/{article_id}/`
+3. Store metadata: original URL, alt text, caption
+4. Generate thumbnails for hero images
+5. Prepare manifest for S3 batch upload
+
+#### Video Handling:
+1. Extract video URLs and embed codes
+2. Download video thumbnails
+3. Store video metadata and duration
+4. Prepare for CDN/streaming integration
+
+### Scheduling & Performance
+
+#### Fetch Intervals by Website Type:
+- **High-frequency news**: Every 15-30 minutes
+- **Daily publishers**: Every 2-4 hours
+- **Weekly content**: Every 6-12 hours
+- **Low-activity sites**: Daily
+
+#### Parallel Processing:
+- Use Celery workers for concurrent fetching
+- Batch process similar operations
+- Rate limit per domain to avoid blocking
+
+#### Resource Management:
+- Cache feed metadata to reduce requests
+- Store robots.txt rules per domain
+- Implement exponential backoff for failures
+- Respect 429 rate limit responses
+
+## Operational Workflows
+
+### Adding a New Website
+```python
+# 1. Create website entry
+website = Website.objects.create(
+    url="https://example.com",
+    name="Example News",
+    auto_fetch_enabled=True,
+    fetch_interval_minutes=60
+)
+
+# 2. Discover feeds and sitemaps
+discover_feeds_for_website.delay(website.id)
+
+# 3. Initial content fetch
+fetch_all_website_content.delay(website.id)
+
+# 4. Schedule recurring fetches
+# (handled by Celery beat schedule)
+```
+
+### Processing Sitemap URLs
+```python
+# For each URL in sitemap:
+1. Check if URL matches article patterns
+2. Verify not in exclusion patterns
+3. Check if already in database
+4. Fetch page metadata (HEAD request)
+5. If article detected:
+   - Fetch full content
+   - Extract and clean text
+   - Download media assets
+   - Store in database
+```
+
+### Finding Related Articles (48-Hour Window)
+```python
+# For new article:
+1. Get publish date
+2. Query articles within ±24 hours
+3. Calculate similarity scores:
+   - Title similarity (TF-IDF)
+   - Content overlap (cosine similarity)
+   - Entity matching (people, orgs, locations)
+   - Category/topic alignment
+4. Group articles with similarity > threshold
+5. Mark as related for content generation
+```
+
+### Generating New Content
+```python
+# For article cluster:
+1. Select 3-5 most relevant sources
+2. Extract key facts from each
+3. Identify unique angles/perspectives
+4. Generate unified narrative
+5. Select best media from sources
+6. Create attribution links
+7. Store as GeneratedContent
+```
 
 ## Management Commands
 
-### Available Commands
-- `discover_feeds <url>` - Discover feeds for a website
-- `add_multi_feeds` - Add multiple feeds from JSON file
-- `fetch_all_website_feeds <website_name>` - Fetch content from all feeds for a website
-- `check_new_content` - Check all active feeds for new content
-- `fetch_content <feed_id>` - Fetch content from a specific feed
+### Essential Commands
+- `discover_feeds <url>` - Find all feeds/sitemaps for a website
+- `discover_feeds_claude <url>` - Use Claude AI for intelligent discovery
+- `check_new_content` - Check all active feeds for new articles
+- `fetch_all_website_feeds <website_name>` - Fetch all content for a website
+- `find_similar_articles --hours 48` - Find related articles in time window
+- `generate_content --cluster-id <id>` - Generate new article from cluster
+- `download_media --article-id <id>` - Download all media for an article
+- `check_scheduled` - Manually trigger scheduled fetch checks
 
-### Example: Adding Hollywood Reporter
-```bash
-# Create feeds JSON file with all category feeds
-python manage.py add_multi_feeds \
-  --website-url "https://www.hollywoodreporter.com" \
-  --website-name "Hollywood Reporter" \
-  --feeds-file hollywood_reporter_feeds.json
+### Monitoring Commands
+- `feed_status` - Show health of all feeds
+- `article_stats --days 7` - Article ingestion statistics
+- `similarity_report` - Show article clusters found
+- `media_storage_stats` - Media storage usage
 
-# Fetch all feeds
-python manage.py fetch_all_website_feeds "Hollywood Reporter"
-```
+## Error Handling & Recovery
 
-## Future Enhancements to Consider
-- Support for authenticated/private feeds
-- Natural language processing for article categorization
-- Full-text search capabilities
-- Webhook notifications for new content
-- RSS feed generation from aggregated content
-- Automatic discovery of category feeds from site navigation
+### Feed Failures
+- After 5 consecutive failures, mark feed as inactive
+- Log detailed error messages for debugging
+- Implement exponential backoff between retries
+- Send alerts for critical feed failures
+
+### Content Extraction Failures
+- Store raw HTML for manual review
+- Flag articles with extraction issues
+- Implement fallback extraction methods
+- Use AI for difficult content extraction
+
+### Media Download Failures
+- Retry with different user agents
+- Store media URL for later retry
+- Mark media as unavailable after max retries
+- Use placeholder images when needed
+
+## Security & Compliance
+
+### Rate Limiting
+- Respect robots.txt directives
+- Implement per-domain rate limits
+- Use polite crawling intervals
+- Handle 429 responses appropriately
+
+### Content Storage
+- Sanitize all HTML before storage
+- Validate URLs to prevent SSRF
+- Implement request timeouts
+- Store content hashes for integrity
+
+### Attribution
+- Always store source URLs
+- Maintain publication timestamps
+- Credit original authors
+- Respect copyright notices
+
+## Performance Optimizations
+
+### Database
+- Index on published_date for time windows
+- Index on content_hash for deduplication
+- Composite index on (feed_id, published_date)
+- Full-text search indexes on content
+
+### Caching
+- Cache feed parsing results
+- Cache similarity calculations
+- Cache extracted metadata
+- Redis for temporary data
+
+### Parallel Processing
+- Concurrent feed fetching
+- Parallel content extraction
+- Batch media downloads
+- Distributed similarity computation
+
+## Future Enhancements
+
+### Phase 1 Improvements
+- WebSocket monitoring for real-time updates
+- Browser automation for JavaScript-heavy sites
+- API integration for major publishers
+- Smart feed discovery from navigation
+
+### Phase 2 Expansions
+- Natural language understanding
+- Event timeline construction
+- Fact extraction and verification
+- Sentiment trajectory tracking
+
+### Phase 3 Evolution
+- Multi-language content generation
+- Video content synthesis
+- Podcast generation from articles
+- Interactive content formats
+
+## Success Metrics
+
+### Ingestion Metrics
+- Articles per day per website
+- Successful fetch percentage
+- Average content extraction quality
+- Media download success rate
+
+### Clustering Metrics
+- Related articles found per day
+- Average cluster size
+- Topic coverage breadth
+- Time to cluster detection
+
+### Generation Metrics
+- Articles generated per day
+- Source diversity per article
+- Content uniqueness score
+- Reader engagement metrics
+
+## Debugging Guide
+
+### No New Content Issues
+1. Check Celery workers are running
+2. Verify Celery beat is active
+3. Check website fetch intervals
+4. Review feed error logs
+5. Verify article detection patterns
+6. Check for rate limiting
+
+### Sitemap Processing Issues
+1. Verify sitemap is valid XML
+2. Check for nested sitemap indexes
+3. Verify article URL patterns
+4. Review exclusion patterns
+5. Check content-type detection
+
+### Similarity Not Working
+1. Verify time window queries
+2. Check TF-IDF vectorization
+3. Review similarity thresholds
+4. Verify article content quality
+5. Check for empty content fields
+
+This system is designed to be a robust, scalable article aggregation platform that not only collects content but intelligently processes and synthesizes it for creating new, valuable content from multiple sources.

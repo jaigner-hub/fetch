@@ -208,7 +208,6 @@ class ContentFetcher:
                     if img_url:
                         # Make URL absolute if it's relative
                         if not img_url.startswith(('http://', 'https://')):
-                            from urllib.parse import urljoin
                             img_url = urljoin(article_url, img_url)
                         
                         images.append({

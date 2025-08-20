@@ -57,6 +57,12 @@
             <td>{{ website.feed_count }}</td>
             <td>{{ website.article_count }}</td>
             <td>
+                <button onclick="fetchWebsite({{ website.pk }}, '{{ website.name|escapejs }}')" 
+                        class="btn btn-sm btn-primary fetch-btn" 
+                        id="fetch-btn-{{ website.pk }}"
+                        title="Manually fetch content from this website">
+                    Fetch
+                </button>
                 <a href="{% url 'feeds:website-detail' website.pk %}" class="btn btn-sm">View</a>
                 <a href="{% url 'feeds:website-edit' website.pk %}" class="btn btn-sm btn-secondary">Edit</a>
                 <form method="post" action="{% url 'feeds:website-delete' website.pk %}" style="display: inline;" onsubmit="return confirmDelete('{{ website.name }}', {{ website.feed_count }}, {{ website.article_count }})">
@@ -95,6 +101,134 @@
 function confirmDelete(websiteName, feedCount, articleCount) {
     const message = `Are you sure you want to delete "${websiteName}"?\n\nThis will permanently delete:\n- ${feedCount} feeds\n- ${articleCount} articles\n\nThis action cannot be undone.`;
     return confirm(message);
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function fetchWebsite(websiteId, websiteName) {
+    const btn = document.getElementById(`fetch-btn-${websiteId}`);
+    const originalText = btn.innerText;
+    
+    // Disable button and show loading state
+    btn.disabled = true;
+    btn.innerText = 'Fetching...';
+    btn.classList.remove('btn-primary');
+    btn.classList.add('btn-secondary');
+    
+    // Make API call
+    fetch(`/api/websites/${websiteId}/fetch/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+            'Content-Type': 'application/json',
+        },
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            // Show success state
+            btn.innerText = '✓ Fetched';
+            btn.classList.remove('btn-secondary');
+            btn.classList.add('btn-success');
+            
+            // Show notification
+            showNotification(`Started fetching content from ${websiteName}`, 'success');
+            
+            // Reset button after 3 seconds
+            setTimeout(() => {
+                btn.innerText = originalText;
+                btn.disabled = false;
+                btn.classList.remove('btn-success');
+                btn.classList.add('btn-primary');
+            }, 3000);
+        } else {
+            // Show error state
+            btn.innerText = '✗ Error';
+            btn.classList.remove('btn-secondary');
+            btn.classList.add('btn-danger');
+            
+            showNotification(`Error: ${data.message}`, 'error');
+            
+            // Reset button after 3 seconds
+            setTimeout(() => {
+                btn.innerText = originalText;
+                btn.disabled = false;
+                btn.classList.remove('btn-danger');
+                btn.classList.add('btn-primary');
+            }, 3000);
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        btn.innerText = '✗ Error';
+        btn.classList.remove('btn-secondary');
+        btn.classList.add('btn-danger');
+        
+        showNotification('Network error. Please try again.', 'error');
+        
+        // Reset button after 3 seconds
+        setTimeout(() => {
+            btn.innerText = originalText;
+            btn.disabled = false;
+            btn.classList.remove('btn-danger');
+            btn.classList.add('btn-primary');
+        }, 3000);
+    });
+}
+
+function showNotification(message, type) {
+    // Create notification element if it doesn't exist
+    let notification = document.getElementById('fetch-notification');
+    if (!notification) {
+        notification = document.createElement('div');
+        notification.id = 'fetch-notification';
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 4px;
+            z-index: 1000;
+            transition: opacity 0.3s;
+            max-width: 300px;
+        `;
+        document.body.appendChild(notification);
+    }
+    
+    // Set color based on type
+    if (type === 'success') {
+        notification.style.backgroundColor = '#4caf50';
+        notification.style.color = 'white';
+    } else if (type === 'error') {
+        notification.style.backgroundColor = '#f44336';
+        notification.style.color = 'white';
+    }
+    
+    // Set message and show
+    notification.innerText = message;
+    notification.style.opacity = '1';
+    notification.style.display = 'block';
+    
+    // Hide after 5 seconds
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        setTimeout(() => {
+            notification.style.display = 'none';
+        }, 300);
+    }, 5000);
 }
 </script>
 {% endblock %}
