@@ -26,6 +26,9 @@ class ArticleDetector:
         r'/\d{4}/\d{2}/\d{2}/',  # /2024/08/20/
         r'/\d{4}-\d{2}-\d{2}/',  # /2024-08-20/
         r'/\d{4}/\d{2}/',        # /2024/08/
+        r'/\d{8}/',              # /20240820/
+        r'_\d{4}-\d{2}-\d{2}',   # _2024-08-20
+        r'/\d{4}/\w+/\d{2}/',    # /2024/august/20/
         
         # Article-specific paths
         r'/article[s]?/',
@@ -35,12 +38,20 @@ class ArticleDetector:
         r'/blog/',
         r'/entry/',
         r'/content/',
+        r'/report[s]?/',
+        r'/analysis/',
+        r'/opinion[s]?/',
+        r'/editorial[s]?/',
+        r'/column[s]?/',
+        r'/commentary/',
         
         # ID patterns
         r'/p/\d+',              # /p/12345
         r'/-\d+',               # /-12345
-        r'/\d{4,}',             # /12345 (4+ digits)
+        r'/\d{5,}',             # /12345 (5+ digits - more specific)
         r'/[a-z0-9]{8,}$',      # Long alphanumeric ID at end
+        r'[?&]article_id=\d+',  # ?article_id=12345
+        r'[?&]story=\d+',       # ?story=12345
         
         # Category/topic paths (often contain articles)
         r'/movies?/',
@@ -65,6 +76,8 @@ class ArticleDetector:
         r'[?&]p=\d+',           # ?p=12345 (WordPress)
         r'[?&]id=\d+',          # ?id=12345
         r'\.html?$',            # Ends with .html or .htm
+        r'\.php\?',             # .php with query params
+        r'/[\w-]{20,}$',        # Long slug at end (20+ chars)
     ]
     
     # Negative indicators - likely NOT articles
@@ -228,7 +241,8 @@ class ArticleDetector:
         score = max(0.0, min(1.0, score))
         
         # Threshold for considering it an article
-        is_article = score >= 0.6
+        # Lower threshold to 0.5 to catch more articles
+        is_article = score >= 0.5
         
         return is_article, score
     

@@ -19,7 +19,7 @@ def test_keygrip_api():
     
     # Test direct API call first
     import requests
-    api_key = "zrag_7zf1YKHrPqGdaAC8f5S52I9QxKwFzK9IbX5cJ-u7lSk"
+    api_key = "zrag_4DCDDfwBj4wAMY1-kRGXk7_g2Vcpyz068JEt2iRqsVc"
     api_url = "https://stage.keygrip.ai/api/v1/query/"
     
     print("\n--- Testing Direct API Call ---")

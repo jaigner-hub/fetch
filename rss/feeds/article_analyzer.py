@@ -378,12 +378,13 @@ class ContentGenerator:
     def __init__(self):
         """Initialize the content generator with Claude client."""
         api_key = settings.ANTHROPIC_API_KEY
+        logger.info(f"ContentGenerator init - ANTHROPIC_API_KEY from settings: {api_key[:20]}..." if api_key else "ContentGenerator init - ANTHROPIC_API_KEY not set")
         if api_key:
             self.client = anthropic.Anthropic(api_key=api_key)
         else:
             self.client = None
             logger.warning("ANTHROPIC_API_KEY not configured - Claude features will be unavailable")
-        self.keygrip_api_key = getattr(settings, 'KEYGRIP_API_KEY', 'zrag_7zf1YKHrPqGdaAC8f5S52I9QxKwFzK9IbX5cJ-u7lSk')
+        self.keygrip_api_key = getattr(settings, 'KEYGRIP_API_KEY', 'zrag_4DCDDfwBj4wAMY1-kRGXk7_g2Vcpyz068JEt2iRqsVc')
         self.keygrip_api_url = getattr(settings, 'KEYGRIP_API_URL', 'https://stage.keygrip.ai/api/v1/query/')
     
     @retry_on_overload(max_retries=8, initial_delay=3, backoff_factor=1.5, max_delay=30)
@@ -553,6 +554,9 @@ Please create an engaging article that:
             logger.error(f"Error with Keygrip after retries: {e}")
             # Fallback to Claude generation
             logger.info("Falling back to Claude generation...")
+            logger.info(f"Claude client status: {self.client is not None}")
+            if self.client:
+                logger.info(f"Claude API key in client: {self.client.api_key[:20]}..." if self.client.api_key else "No API key in client")
             try:
                 return self.generate_article(source_articles, style="news", target_length=800)
             except Exception as claude_error:

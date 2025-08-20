@@ -342,12 +342,12 @@ def fetch_all_website_content(website_id):
             queued_rss_tasks += 1
             logger.info(f"Queued RSS/ATOM fetch task for: {feed.title or feed.feed_url}")
         
-        # Skip sitemap processing for now - they're too slow
+        # Queue sitemap processing tasks
         queued_sitemap_tasks = 0
-        # for sitemap_feed in sitemap_feeds:
-        #     fetch_sitemap_content.delay(sitemap_feed.id)
-        #     queued_sitemap_tasks += 1
-        #     logger.info(f"Queued sitemap fetch task for: {sitemap_feed.feed_url}")
+        for sitemap_feed in sitemap_feeds:
+            fetch_sitemap_content.delay(sitemap_feed.id)
+            queued_sitemap_tasks += 1
+            logger.info(f"Queued sitemap fetch task for: {sitemap_feed.feed_url}")
         
         return f"Queued {queued_rss_tasks} RSS/ATOM and {queued_sitemap_tasks} sitemap fetch tasks for {website.name}"
         
@@ -435,7 +435,8 @@ def fetch_sitemap_content(feed_id):
         
         # Limit URLs to process
         # News sitemaps get more URLs since they're recent
-        max_urls_to_process = 30 if is_news_sitemap else 10
+        # Increased limits to process more articles
+        max_urls_to_process = 50 if is_news_sitemap else 25
         
         # Process each URL from the filtered article URLs
         for url in article_urls[:max_urls_to_process]:
