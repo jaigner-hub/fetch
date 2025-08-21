@@ -4,7 +4,7 @@ import hashlib
 
 
 class Website(models.Model):
-    """Model to store websites to crawl for RSS feeds and sitemaps."""
+    """Model to store websites to crawl for RSS and Atom feeds."""
     FETCH_INTERVAL_CHOICES = [
         (15, 'Every 15 minutes'),
         (30, 'Every 30 minutes'),
@@ -52,15 +52,15 @@ class Website(models.Model):
 
 
 class Feed(models.Model):
-    """Model to store discovered RSS feeds and sitemaps."""
+    """Model to store discovered RSS, Atom feeds, and selective sitemaps."""
     FEED_TYPE_CHOICES = [
         ('RSS', 'RSS Feed'),
         ('ATOM', 'Atom Feed'),
-        ('SITEMAP', 'Sitemap'),
+        ('SITEMAP', 'Sitemap (Recent Content)'),
     ]
     
     website = models.ForeignKey(Website, on_delete=models.CASCADE, related_name='feeds')
-    feed_url = models.URLField(max_length=2048, unique=True, help_text="URL of the RSS feed or sitemap")
+    feed_url = models.URLField(max_length=2048, unique=True, help_text="URL of the RSS/Atom feed or sitemap")
     feed_type = models.CharField(max_length=10, choices=FEED_TYPE_CHOICES)
     title = models.CharField(max_length=255, blank=True, help_text="Title of the feed")
     description = models.TextField(blank=True, help_text="Description of the feed")
@@ -268,6 +268,62 @@ class GeneratedContent(models.Model):
             {"title": article.title, "url": article.url, "date": article.published_date}
             for article in self.source_articles.all()
         ]
+
+
+class ArticleCluster(models.Model):
+    """Model to store AI-identified article clusters about the same event/story."""
+    
+    # Core fields
+    title = models.CharField(max_length=500, help_text="Cluster title describing the event/story")
+    description = models.TextField(help_text="Brief description of what this cluster is about")
+    
+    # Articles in this cluster
+    articles = models.ManyToManyField(Article, related_name='clusters')
+    
+    # Cluster metadata
+    event_type = models.CharField(max_length=100, blank=True, help_text="Type of event (breaking news, ongoing story, etc)")
+    main_topics = models.JSONField(default=list, help_text="Main topics/themes")
+    key_entities = models.JSONField(default=dict, help_text="Key people, orgs, locations")
+    
+    # Time bounds
+    earliest_article = models.DateTimeField(null=True, blank=True)
+    latest_article = models.DateTimeField(null=True, blank=True)
+    
+    # Quality metrics
+    confidence_score = models.FloatField(default=0.0, help_text="AI confidence in this cluster (0-1)")
+    source_count = models.IntegerField(default=0, help_text="Number of unique sources")
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    # Active flag (to hide bad clusters)
+    is_active = models.BooleanField(default=True)
+    
+    class Meta:
+        ordering = ['-latest_article', '-source_count']
+        indexes = [
+            models.Index(fields=['-latest_article', 'is_active']),
+            models.Index(fields=['-created_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.title} ({self.articles.count()} articles)"
+    
+    def update_metadata(self):
+        """Update cluster metadata based on current articles."""
+        articles = self.articles.all()
+        if articles:
+            dates = [a.published_date for a in articles if a.published_date]
+            if dates:
+                self.earliest_article = min(dates)
+                self.latest_article = max(dates)
+            
+            # Count unique sources
+            sources = set(a.feed.website.name for a in articles if a.feed and a.feed.website)
+            self.source_count = len(sources)
+            
+            self.save()
 
 
 class FetchLog(models.Model):

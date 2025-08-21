@@ -18,8 +18,7 @@ logger = logging.getLogger(__name__)
 @shared_task
 def discover_feeds_for_website(website_id):
     """
-    Discover and save feeds for a specific website.
-    Now also discovers RSS/Atom feeds from sitemaps.
+    Discover and save RSS/Atom feeds for a specific website.
     
     Args:
         website_id: ID of the Website model instance
@@ -28,19 +27,19 @@ def discover_feeds_for_website(website_id):
         website = Website.objects.get(id=website_id)
         logger.info(f"Starting feed discovery for {website.name} ({website.url})")
         
-        # Try Claude-based discovery if API key is available
-        if settings.ANTHROPIC_API_KEY:
+        # Try OpenRouter-based discovery if API key is available
+        if hasattr(settings, 'OPENROUTER_API_KEY') and settings.OPENROUTER_API_KEY:
             try:
-                from .claude_feed_discovery import ClaudeFeedDiscoverer
-                logger.info("Using Claude AI for intelligent feed discovery")
-                discoverer = ClaudeFeedDiscoverer(website.url)
+                from .openrouter_feed_discovery import OpenRouterFeedDiscoverer
+                logger.info("Using OpenRouter AI for intelligent feed discovery")
+                discoverer = OpenRouterFeedDiscoverer(website.url)
                 results = discoverer.discover_feeds_intelligently()
             except Exception as e:
-                logger.warning(f"Claude discovery failed, falling back to traditional: {e}")
+                logger.warning(f"OpenRouter discovery failed, falling back to traditional: {e}")
                 discoverer = FeedDiscoverer(website.url)
                 results = discoverer.discover_all()
         else:
-            logger.info("Using traditional feed discovery (no Claude API key)")
+            logger.info("Using traditional feed discovery (no OpenRouter API key)")
             discoverer = FeedDiscoverer(website.url)
             results = discoverer.discover_all()
         
@@ -71,24 +70,24 @@ def discover_feeds_for_website(website_id):
                     feed.description = validated.get('description', feed.description)
                     feed.save()
         
-        # Process discovered sitemaps
+        # Process discovered sitemaps (selective, high-value only)
         for sitemap_info in results.get('sitemaps', []):
             sitemap, created = Feed.objects.get_or_create(
                 feed_url=sitemap_info['url'],
                 defaults={
                     'website': website,
                     'feed_type': 'SITEMAP',
-                    'title': sitemap_info.get('title', f"Sitemap: {sitemap_info['url']}"),
-                    'description': sitemap_info.get('description', 'XML Sitemap'),
+                    'title': sitemap_info.get('title', 'Sitemap'),
+                    'description': f"Recent content sitemap (Priority: {sitemap_info.get('priority', 50)})",
                 }
             )
             
             if created:
                 sitemaps_created += 1
-                logger.info(f"Created new sitemap: {sitemap.feed_url}")
+                logger.info(f"Created selective sitemap: {sitemap.feed_url} (priority: {sitemap_info.get('priority', 50)})")
         
-        logger.info(f"Feed discovery completed for {website.name}. Created {feeds_created} new feeds and {sitemaps_created} new sitemaps.")
-        return f"Discovered {feeds_created} new feeds and {sitemaps_created} sitemaps for {website.name}"
+        logger.info(f"Feed discovery completed for {website.name}. Created {feeds_created} feeds and {sitemaps_created} selective sitemaps.")
+        return f"Discovered {feeds_created} feeds and {sitemaps_created} selective sitemaps for {website.name}"
         
     except Website.DoesNotExist:
         logger.error(f"Website with ID {website_id} not found")
@@ -101,8 +100,7 @@ def discover_feeds_for_website(website_id):
 @shared_task
 def fetch_feed_content(feed_id):
     """
-    Fetch and save content from a specific feed.
-    NOTE: Now only processes RSS/ATOM feeds, not sitemaps.
+    Fetch and save content from a specific RSS/Atom feed or selective sitemap.
     
     Args:
         feed_id: ID of the Feed model instance
@@ -110,10 +108,9 @@ def fetch_feed_content(feed_id):
     try:
         feed = Feed.objects.get(id=feed_id)
         
-        # Skip sitemap feeds - they are only for discovering RSS/Atom feeds
+        # Route to appropriate handler based on feed type
         if feed.feed_type == 'SITEMAP':
-            logger.info(f"Skipping sitemap feed (only for discovery): {feed.feed_url}")
-            return "Sitemap feeds are not processed for content"
+            return fetch_selective_sitemap_content(feed_id)
         
         logger.info(f"Starting content fetch for feed: {feed.feed_url}")
         
@@ -165,12 +162,34 @@ def fetch_feed_content(feed_id):
                                 logger.info(f"Updated article: {article.title}")
                                 
                         except Article.DoesNotExist:
+                            # Validate article before creating
+                            title = article_data.get('title', '').strip()
+                            content = article_data.get('content', '')
+                            
+                            # Skip articles with no or bad title
+                            if not title or len(title) < 10 or title == '...':
+                                logger.warning(f"Skipping article with bad title: {article_data['url']}")
+                                continue
+                            
+                            # Skip articles with minimal content
+                            if content:
+                                from bs4 import BeautifulSoup
+                                soup = BeautifulSoup(content, 'html.parser')
+                                text = soup.get_text(strip=True)
+                                word_count = len(text.split())
+                                if word_count < 100:  # Minimum 100 words
+                                    logger.warning(f"Skipping article with only {word_count} words: {article_data['url']}")
+                                    continue
+                            else:
+                                logger.warning(f"Skipping article with no content: {article_data['url']}")
+                                continue
+                            
                             # Create new article
                             article = Article.objects.create(
                                 feed=feed,
                                 url=article_data['url'],
-                                title=article_data['title'],
-                                content=article_data['content'],
+                                title=title,
+                                content=content,
                                 summary=article_data['summary'],
                                 author=article_data['author'],
                                 published_date=article_data['published_date'],
@@ -260,6 +279,172 @@ def fetch_article_full_content(article_id):
         return f"Error: {str(e)}"
 
 
+@shared_task(time_limit=180, soft_time_limit=150)  # 3 minute limit for sitemap processing
+def fetch_selective_sitemap_content(feed_id):
+    """
+    Fetch and save content from a sitemap, but only for recent articles (48 hours).
+    
+    Args:
+        feed_id: ID of the Feed model instance (should be SITEMAP type)
+    """
+    try:
+        feed = Feed.objects.get(id=feed_id)
+        
+        if feed.feed_type != 'SITEMAP':
+            logger.warning(f"Feed {feed.feed_url} is not a sitemap, skipping")
+            return "Not a sitemap feed"
+        
+        logger.info(f"Starting selective sitemap content fetch for: {feed.feed_url}")
+        
+        # Create fetch log
+        fetch_log = FetchLog.objects.create(feed=feed)
+        
+        # Use our selective sitemap processor
+        from .sitemap_processor import SelectiveSitemapProcessor
+        from .content_fetcher import ContentFetcher
+        
+        processor = SelectiveSitemapProcessor(max_age_hours=48)
+        fetcher = ContentFetcher()
+        
+        # Get recent article URLs from sitemap
+        recent_urls = processor.fetch_sitemap_urls(feed.feed_url)
+        
+        if not recent_urls:
+            feed.mark_checked(success=True)  # Not an error, just no recent content
+            fetch_log.completed_at = timezone.now()
+            fetch_log.success = True
+            fetch_log.new_articles = 0
+            fetch_log.save()
+            logger.info(f"No recent URLs found in sitemap: {feed.feed_url}")
+            return "No recent content in sitemap"
+        
+        logger.info(f"Found {len(recent_urls)} recent URLs in sitemap {feed.feed_url}")
+        
+        new_articles = 0
+        processed_urls = 0
+        max_articles_per_sitemap = 20  # Limit to prevent overwhelming the system
+        
+        for url_info in recent_urls[:max_articles_per_sitemap]:
+            url = url_info['url']
+            
+            try:
+                processed_urls += 1
+                
+                # Check if article already exists
+                if Article.objects.filter(url=url).exists():
+                    logger.debug(f"Article already exists: {url}")
+                    continue
+                
+                # Fetch the article content
+                article_content = fetcher.fetch_article_content(url)
+                
+                if not article_content:
+                    logger.debug(f"No content fetched from: {url}")
+                    continue
+                
+                # Validate it's actually an article
+                if not processor.validate_article_content(url, article_content):
+                    logger.debug(f"Content validation failed for: {url}")
+                    continue
+                
+                # Extract metadata
+                metadata = fetcher.extract_metadata(url)
+                
+                # Get clean text for final validation
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(article_content, 'html.parser')
+                text_content = soup.get_text(strip=True)
+                
+                # Final content check
+                if len(text_content) < 300:
+                    logger.debug(f"Insufficient text content ({len(text_content)} chars): {url}")
+                    continue
+                
+                # Validate title
+                title = metadata.get('title', '').strip()
+                if not title or len(title) < 10:
+                    logger.warning(f"Bad/missing title from: {url}")
+                    continue
+                
+                # Process publication date
+                pub_date = metadata.get('published_date')
+                if pub_date and not timezone.is_aware(pub_date):
+                    pub_date = timezone.make_aware(pub_date)
+                elif not pub_date:
+                    # Use lastmod from sitemap if available
+                    if url_info.get('lastmod'):
+                        pub_date = processor.parse_sitemap_date(url_info['lastmod'])
+                    if not pub_date:
+                        pub_date = timezone.now()
+                
+                # Prepare metadata for storage
+                safe_metadata = {k: v for k, v in metadata.items() if k != 'published_date'}
+                if pub_date:
+                    safe_metadata['published_date'] = pub_date.isoformat()
+                
+                # Extract images
+                imgs = []
+                for img in soup.find_all('img'):
+                    img_url = img.get('src', '')
+                    if img_url:
+                        imgs.append({
+                            'url': img_url,
+                            'alt': img.get('alt', ''),
+                            'title': img.get('title', '')
+                        })
+                
+                # Create article
+                article = Article.objects.create(
+                    feed=feed,
+                    url=url,
+                    title=title,
+                    content=article_content,
+                    summary=metadata.get('description', '')[:500],
+                    author=metadata.get('author', ''),
+                    published_date=pub_date,
+                    raw_data=safe_metadata,
+                    tags=[],
+                    images=imgs,
+                    featured_image=metadata.get('image', '')
+                )
+                new_articles += 1
+                logger.info(f"Created article from selective sitemap: {article.title}")
+                
+                # Rate limiting
+                import time
+                time.sleep(0.5)  # Be polite to servers
+                
+            except Exception as e:
+                logger.error(f"Error processing URL {url}: {e}")
+                continue
+        
+        # Update feed status
+        feed.mark_checked(success=True)
+        
+        # Update fetch log
+        fetch_log.completed_at = timezone.now()
+        fetch_log.success = True
+        fetch_log.new_articles = new_articles
+        fetch_log.save()
+        
+        logger.info(f"Selective sitemap fetch completed: {new_articles} new articles from {processed_urls} URLs")
+        return f"Fetched {new_articles} recent articles from sitemap"
+        
+    except Feed.DoesNotExist:
+        logger.error(f"Feed with ID {feed_id} not found")
+        return f"Feed not found"
+    except Exception as e:
+        logger.error(f"Error fetching selective sitemap {feed_id}: {e}")
+        
+        if 'fetch_log' in locals():
+            fetch_log.completed_at = timezone.now()
+            fetch_log.success = False
+            fetch_log.error_message = str(e)
+            fetch_log.save()
+        
+        return f"Error: {str(e)}"
+
+
 @shared_task
 def check_all_feeds():
     """
@@ -305,8 +490,7 @@ def discover_new_feeds():
 @shared_task
 def fetch_all_website_content(website_id):
     """
-    Fetch all content from all feeds for a specific website.
-    Now also processes sitemap feeds to fetch articles from them.
+    Fetch all content from all RSS/Atom feeds for a specific website.
     
     Args:
         website_id: ID of the Website model instance
@@ -315,19 +499,16 @@ def fetch_all_website_content(website_id):
         website = Website.objects.get(id=website_id)
         logger.info(f"Starting full content fetch for website: {website.name}")
         
-        # Get all active feeds for this website (including sitemaps)
-        all_feeds = website.feeds.filter(active=True)
-        rss_feeds = all_feeds.filter(feed_type__in=['RSS', 'ATOM'])
-        sitemap_feeds = all_feeds.filter(feed_type='SITEMAP')
+        # Get all active RSS/Atom feeds for this website
+        rss_feeds = website.feeds.filter(active=True, feed_type__in=['RSS', 'ATOM'])
         
-        total_rss = rss_feeds.count()
-        total_sitemaps = sitemap_feeds.count()
+        total_feeds = rss_feeds.count()
         
-        if total_rss == 0 and total_sitemaps == 0:
+        if total_feeds == 0:
             logger.warning(f"No active feeds found for website {website.name}")
             return f"No active feeds found for {website.name}"
         
-        logger.info(f"Processing {total_rss} RSS/ATOM feeds and {total_sitemaps} sitemaps for {website.name}")
+        logger.info(f"Processing {total_feeds} RSS/ATOM feeds for {website.name}")
         
         # Create FetchLog entries immediately for progress tracking
         # This ensures the frontend can detect that fetching is in progress
@@ -336,20 +517,13 @@ def fetch_all_website_content(website_id):
             logger.info(f"Created FetchLog for: {feed.title or feed.feed_url}")
         
         # Queue fetch tasks for RSS/ATOM feeds
-        queued_rss_tasks = 0
+        queued_tasks = 0
         for feed in rss_feeds:
             fetch_feed_content.delay(feed.id)
-            queued_rss_tasks += 1
+            queued_tasks += 1
             logger.info(f"Queued RSS/ATOM fetch task for: {feed.title or feed.feed_url}")
         
-        # Queue sitemap processing tasks
-        queued_sitemap_tasks = 0
-        for sitemap_feed in sitemap_feeds:
-            fetch_sitemap_content.delay(sitemap_feed.id)
-            queued_sitemap_tasks += 1
-            logger.info(f"Queued sitemap fetch task for: {sitemap_feed.feed_url}")
-        
-        return f"Queued {queued_rss_tasks} RSS/ATOM and {queued_sitemap_tasks} sitemap fetch tasks for {website.name}"
+        return f"Queued {queued_tasks} RSS/ATOM fetch tasks for {website.name}"
         
     except Website.DoesNotExist:
         logger.error(f"Website with ID {website_id} not found")
@@ -359,204 +533,6 @@ def fetch_all_website_content(website_id):
         return f"Error: {str(e)}"
 
 
-@shared_task(time_limit=120, soft_time_limit=100)  # 2 minute hard limit, 100 second soft limit
-def fetch_sitemap_content(feed_id):
-    """
-    Fetch and save content from a sitemap feed by extracting article URLs
-    and fetching their content.
-    
-    Args:
-        feed_id: ID of the Feed model instance (should be a SITEMAP type)
-    """
-    try:
-        feed = Feed.objects.get(id=feed_id)
-        
-        if feed.feed_type != 'SITEMAP':
-            logger.warning(f"Feed {feed.feed_url} is not a sitemap, skipping")
-            return "Not a sitemap feed"
-        
-        logger.info(f"Starting sitemap content fetch for: {feed.feed_url}")
-        
-        # Create fetch log
-        fetch_log = FetchLog.objects.create(feed=feed)
-        
-        fetcher = ContentFetcher()
-        
-        # Get URLs from sitemap
-        sitemap_urls = fetcher.fetch_sitemap_urls(feed.feed_url)
-        
-        if not sitemap_urls:
-            feed.mark_checked(success=False, error_message="No URLs found in sitemap")
-            fetch_log.completed_at = timezone.now()
-            fetch_log.success = False
-            fetch_log.error_message = "No URLs found in sitemap"
-            fetch_log.save()
-            logger.warning(f"No URLs found in sitemap: {feed.feed_url}")
-            return "No URLs found in sitemap"
-        
-        logger.info(f"Found {len(sitemap_urls)} URLs in sitemap {feed.feed_url}")
-        
-        # Filter URLs to only get articles using ArticleDetector
-        from .article_detector import ArticleDetector
-        detector = ArticleDetector()
-        
-        # Get domain from feed's website
-        domain = feed.website.url if feed.website else None
-        article_urls = detector.get_article_urls_from_sitemap(sitemap_urls, domain)
-        
-        logger.info(f"Filtered to {len(article_urls)} article URLs from {len(sitemap_urls)} total URLs")
-        
-        new_articles = 0
-        updated_articles = 0
-        processed_urls = 0
-        
-        # Filter and limit URLs to process
-        # Only process recent URLs (skip very old content from archived sitemaps)
-        from datetime import datetime, timedelta
-        import re
-        
-        # Check if this is a news sitemap (usually has recent content)
-        is_news_sitemap = 'news' in feed.feed_url.lower() or 'recent' in feed.feed_url.lower()
-        
-        # Try to detect year in sitemap URL (e.g., sitemap-2002.xml)
-        year_match = re.search(r'sitemap-(\d{4})', feed.feed_url)
-        if year_match:
-            sitemap_year = int(year_match.group(1))
-            current_year = datetime.now().year
-            # Skip sitemaps older than 2 years (unless it's a news sitemap)
-            if sitemap_year < current_year - 2 and not is_news_sitemap:
-                logger.info(f"Skipping old sitemap from {sitemap_year}: {feed.feed_url}")
-                feed.mark_checked(success=True)
-                fetch_log.completed_at = timezone.now()
-                fetch_log.success = True
-                fetch_log.new_articles = 0
-                fetch_log.save()
-                return f"Skipped old sitemap from {sitemap_year}"
-        
-        # Limit URLs to process
-        # News sitemaps get more URLs since they're recent
-        # Increased limits to process more articles
-        max_urls_to_process = 50 if is_news_sitemap else 25
-        
-        # Process each URL from the filtered article URLs
-        for url in article_urls[:max_urls_to_process]:
-            try:
-                # No need for basic filtering - ArticleDetector already did it
-                
-                processed_urls += 1
-                
-                # Check if article already exists
-                existing_article = Article.objects.filter(url=url).first()
-                
-                if existing_article:
-                    # Article exists - check if this feed should be added as additional feed
-                    if feed != existing_article.feed and feed not in existing_article.additional_feeds.all():
-                        existing_article.additional_feeds.add(feed)
-                        logger.info(f"Article '{existing_article.title}' also found in sitemap {feed.feed_url}")
-                else:
-                    # Fetch the article content
-                    article_content = fetcher.fetch_article_content(url)
-                    
-                    # Skip if content is too short (likely not a real article)
-                    if article_content and len(article_content) > 1000:
-                        # Extract metadata from the page
-                        metadata = fetcher.extract_metadata(url)
-                        
-                        # Additional check: ensure there's substantial text content
-                        from bs4 import BeautifulSoup
-                        soup_check = BeautifulSoup(article_content, 'html.parser')
-                        text_content = soup_check.get_text(strip=True)
-                        
-                        # Skip if text content is too short
-                        if len(text_content) < 300:
-                            logger.info(f"Skipping {url} - insufficient text content ({len(text_content)} chars)")
-                            continue
-                        
-                        # Create new article
-                        # Convert datetime to timezone-aware if needed
-                        pub_date = metadata.get('published_date')
-                        if pub_date and not timezone.is_aware(pub_date):
-                            pub_date = timezone.make_aware(pub_date)
-                        elif not pub_date:
-                            pub_date = timezone.now()
-                        
-                        # Remove non-serializable data from metadata for raw_data field
-                        safe_metadata = {k: v for k, v in metadata.items() if k != 'published_date'}
-                        if pub_date:
-                            safe_metadata['published_date'] = pub_date.isoformat()
-                        
-                        # Extract featured image from metadata
-                        featured_img = metadata.get('image', '')
-                        
-                        # Extract images from content
-                        imgs = []
-                        if article_content:
-                            from bs4 import BeautifulSoup
-                            soup = BeautifulSoup(article_content, 'html.parser')
-                            for img in soup.find_all('img'):
-                                img_url = img.get('src', '')
-                                if img_url:
-                                    imgs.append({
-                                        'url': img_url,
-                                        'alt': img.get('alt', ''),
-                                        'title': img.get('title', '')
-                                    })
-                        
-                        article = Article.objects.create(
-                            feed=feed,
-                            url=url,
-                            title=metadata.get('title', url),
-                            content=article_content,
-                            summary=metadata.get('description', '')[:500],
-                            author=metadata.get('author', ''),
-                            published_date=pub_date,
-                            raw_data=safe_metadata,
-                            tags=[],  # Sitemap doesn't provide tags
-                            images=imgs,
-                            featured_image=featured_img
-                        )
-                        new_articles += 1
-                        logger.info(f"Created article from sitemap: {article.title}")
-                        
-                        # Rate limiting
-                        import time
-                        time.sleep(0.2)  # Reduced delay for faster processing
-                
-                # Stop if we've processed enough URLs
-                if processed_urls >= 10:  # Reduced from 50 to 10 for much faster processing
-                    logger.info(f"Reached processing limit for sitemap {feed.feed_url}")
-                    break
-                    
-            except Exception as e:
-                logger.error(f"Error processing URL {url}: {e}")
-                continue
-        
-        # Update feed status
-        feed.mark_checked(success=True)
-        
-        # Update fetch log
-        fetch_log.completed_at = timezone.now()
-        fetch_log.success = True
-        fetch_log.new_articles = new_articles
-        fetch_log.updated_articles = updated_articles
-        fetch_log.save()
-        
-        logger.info(f"Sitemap fetch completed: {new_articles} new articles from {processed_urls} URLs")
-        return f"Fetched {new_articles} new articles from {processed_urls} sitemap URLs"
-        
-    except Feed.DoesNotExist:
-        logger.error(f"Feed with ID {feed_id} not found")
-        return f"Feed with ID {feed_id} not found"
-    except Exception as e:
-        logger.error(f"Error fetching sitemap {feed_id}: {e}")
-        
-        if 'fetch_log' in locals():
-            fetch_log.completed_at = timezone.now()
-            fetch_log.success = False
-            fetch_log.error_message = str(e)
-            fetch_log.save()
-            
-        return f"Error: {str(e)}"
 
 
 @shared_task
@@ -727,7 +703,7 @@ def analyze_article_async(self, article_id, find_similar=True):
                 meta={'current': 70, 'total': 100, 'status': 'Finding similar articles...'}
             )
             
-            similar = analyzer.find_similar_articles(article, threshold=0.7)
+            similar = analyzer.find_similar_articles(article, threshold=0.85)
             for similar_article, score in similar[:10]:
                 analysis.similar_articles.add(similar_article)
                 logger.info(f"Found similar article: {similar_article.title[:50]} (score: {score:.2f})")

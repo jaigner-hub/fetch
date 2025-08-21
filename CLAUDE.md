@@ -338,6 +338,16 @@ fetch_all_website_content.delay(website.id)
 - Content uniqueness score
 - Reader engagement metrics
 
+## Server Management
+
+### Restarting the Application
+The application runs under Apache web server. To apply changes:
+```bash
+sudo systemctl restart apache2
+```
+
+**Note:** Do NOT use `python manage.py runserver` - the production server is Apache with mod_wsgi.
+
 ## Debugging Guide
 
 ### No New Content Issues

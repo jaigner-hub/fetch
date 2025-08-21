@@ -355,7 +355,8 @@ class ContentFetcher:
         for selector in ['.sidebar', '.navigation', '.menu', '.advertisement', 
                         '.ads', '#header', '#footer', '#comments', '.social-share',
                         '.related-posts', '.recommended', '.newsletter', '.popup',
-                        '.cookie-notice', '.gdpr', '.signup', '.promo']:
+                        '.cookie-notice', '.gdpr', '.signup', '.promo', '.widget',
+                        '.stream-info', '.show-info', '.availability']:
             for element in soup.select(selector):
                 element.decompose()
         
@@ -402,12 +403,26 @@ class ContentFetcher:
                 # Just get the inner HTML as string - simpler and faster
                 content_html = str(content_elem)
                 
-                # Require substantial content (at least 1000 chars of HTML)
-                if content_html and len(content_html) > 1000:
+                # Require substantial content (at least 1500 chars of HTML)
+                if content_html and len(content_html) > 1500:
                     # Also check text content length to ensure it's not just HTML tags
                     text_content = content_elem.get_text(strip=True)
-                    if len(text_content) > 300:  # At least 300 chars of actual text
+                    word_count = len(text_content.split())
+                    
+                    # Check for link-heavy content (navigation pages)
+                    link_count = len(content_elem.find_all('a'))
+                    if word_count > 0:
+                        links_per_100_words = (link_count / word_count) * 100
+                        if links_per_100_words > 15:  # Too many links
+                            logger.debug(f"Content is link-heavy: {links_per_100_words:.1f} links per 100 words")
+                            continue
+                    
+                    # Require at least 200 words of actual text content
+                    if word_count >= 200:
+                        logger.debug(f"Found article content with {word_count} words")
                         return content_html
+                    else:
+                        logger.debug(f"Content too short: only {word_count} words")
         
         # Fallback: try to find the largest concentration of paragraphs
         all_paragraphs = soup.find_all('p')
@@ -421,23 +436,40 @@ class ContentFetcher:
                     html_parts.append(str(p))
                     total_text_length += len(p_text)
             
-            # Require at least 500 chars of actual text content
-            if html_parts and total_text_length > 500:
+            # Require at least 200 words of actual text content
+            word_count = len(' '.join([p.get_text(strip=True) for p in all_paragraphs]).split())
+            
+            # Check average paragraph length (navigation pages have short paragraphs)
+            if all_paragraphs:
+                avg_words_per_p = word_count / len(all_paragraphs)
+                if avg_words_per_p < 15:  # Paragraphs too short
+                    logger.debug(f"Paragraphs too short: avg {avg_words_per_p:.1f} words")
+                    return None
+            
+            if html_parts and word_count >= 200:
                 combined_html = '\n'.join(html_parts)
-                if len(combined_html) > 1000:  # Increased minimum HTML length
+                if len(combined_html) > 1500:  # Increased minimum HTML length
+                    logger.debug(f"Built article from {len(html_parts)} paragraphs with {word_count} words")
                     return f'<div>{combined_html}</div>'
+            else:
+                logger.debug(f"Not enough paragraph content: {word_count} words")
         
         # Last resort: get text content if no HTML can be extracted
         text = soup.get_text(separator='\n', strip=True)
-        if text and len(text) > 1000:  # Increased minimum to 1000 chars
+        word_count = len(text.split())
+        
+        # Require at least 200 words for fallback text extraction
+        if text and word_count >= 200:
             # Convert plain text to basic HTML
             paragraphs = [f'<p>{p}</p>' for p in text.split('\n\n') if len(p) > 50]
             # Only return if we have substantial content
-            if paragraphs and len(paragraphs) > 3:
+            if paragraphs and len(paragraphs) >= 3:
                 combined = '\n'.join(paragraphs)
-                if len(combined) > 1000:
+                if len(combined) > 1500:
+                    logger.debug(f"Fallback text extraction: {word_count} words")
                     return combined
         
+        logger.warning(f"Content too short or not found: {word_count} words")
         return None
     
     def _clean_and_preserve_html(self, element) -> str:
@@ -556,48 +588,6 @@ class ContentFetcher:
         content_to_hash = f"{title}{content}{summary}"
         return hashlib.sha256(content_to_hash.encode()).hexdigest()
     
-    def fetch_sitemap_urls(self, sitemap_url: str) -> List[str]:
-        """
-        Fetch and parse URLs from a sitemap.
-        
-        Args:
-            sitemap_url: URL of the sitemap
-            
-        Returns:
-            List of URLs found in the sitemap
-        """
-        urls = []
-        
-        try:
-            response = self.session.get(sitemap_url, timeout=self.timeout)
-            response.raise_for_status()
-            
-            # Parse XML
-            soup = BeautifulSoup(response.content, 'lxml-xml')
-            
-            # Find all URL elements
-            url_elements = soup.find_all('url')
-            
-            for url_elem in url_elements:
-                loc = url_elem.find('loc')
-                if loc and loc.text:
-                    urls.append(loc.text.strip())
-            
-            # Also check for sitemap index (nested sitemaps)
-            sitemap_elements = soup.find_all('sitemap')
-            for sitemap_elem in sitemap_elements:
-                loc = sitemap_elem.find('loc')
-                if loc and loc.text:
-                    # Recursively fetch nested sitemap
-                    nested_urls = self.fetch_sitemap_urls(loc.text.strip())
-                    urls.extend(nested_urls)
-            
-            logger.info(f"Found {len(urls)} URLs in sitemap {sitemap_url}")
-            
-        except Exception as e:
-            logger.error(f"Error fetching sitemap {sitemap_url}: {e}")
-            
-        return urls
     
     def extract_metadata(self, article_url: str) -> Dict:
         """

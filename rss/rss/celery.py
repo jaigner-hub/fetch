@@ -27,7 +27,7 @@ app.conf.task_routes = {
     'feeds.tasks.check_all_feeds': {'queue': 'celery'},
     'feeds.tasks.discover_new_feeds': {'queue': 'celery'},
     'feeds.tasks.fetch_all_website_content': {'queue': 'celery'},
-    'feeds.tasks.fetch_sitemap_content': {'queue': 'celery'},
+    'feeds.tasks.fetch_selective_sitemap_content': {'queue': 'celery'},
     'feeds.tasks.check_scheduled_fetches': {'queue': 'celery'},
     'feeds.tasks.fetch_single_website_on_schedule': {'queue': 'celery'},
     'feeds.tasks.cleanup_old_logs': {'queue': 'celery'},

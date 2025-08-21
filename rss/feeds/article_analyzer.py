@@ -180,13 +180,8 @@ Please respond in JSON format. Extract actual entity names from the article:
             json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
             if json_match:
                 try:
-                    # Clean the JSON string to remove control characters
+                    # Try to parse JSON directly first
                     json_str = json_match.group()
-                    # Remove control characters except for newlines and tabs
-                    json_str = ''.join(char for char in json_str if ord(char) >= 32 or char in '\n\t')
-                    # Replace actual newlines in content with escaped newlines
-                    json_str = json_str.replace('\n', '\\n').replace('\t', '\\t')
-                    # Parse the cleaned JSON
                     result = json.loads(json_str)
                 except json.JSONDecodeError as e:
                     logger.warning(f"Failed to parse JSON in extract_summary: {e}")
@@ -274,7 +269,7 @@ Please respond in JSON format. Extract actual entity names from the article:
                 "error": str(e)
             }
     
-    def find_similar_articles(self, article, threshold: float = 0.7) -> List[Tuple['Article', float]]:
+    def find_similar_articles(self, article, threshold: float = 0.85) -> List[Tuple['Article', float]]:
         """
         Find articles with similar content using TF-IDF and cosine similarity.
         
@@ -804,13 +799,8 @@ Generate the article in JSON format:
             json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
             if json_match:
                 try:
-                    # Clean the JSON string to remove control characters
+                    # Try to parse JSON directly first
                     json_str = json_match.group()
-                    # Remove control characters except for newlines and tabs
-                    json_str = ''.join(char for char in json_str if ord(char) >= 32 or char in '\n\t')
-                    # Replace actual newlines in content with escaped newlines
-                    json_str = json_str.replace('\n', '\\n').replace('\t', '\\t')
-                    # Parse the cleaned JSON
                     result = json.loads(json_str)
                 except json.JSONDecodeError as e:
                     logger.warning(f"Failed to parse JSON response: {e}")

@@ -1,5 +1,5 @@
 """
-Feed discovery module to find RSS feeds and sitemaps from websites.
+Feed discovery module to find RSS and Atom feeds from websites.
 """
 import requests
 from bs4 import BeautifulSoup
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class FeedDiscoverer:
-    """Discovers RSS feeds and sitemaps from websites."""
+    """Discovers RSS and Atom feeds from websites."""
     
     # Common feed URL patterns to check
     COMMON_FEED_PATHS = [
@@ -61,12 +61,13 @@ class FeedDiscoverer:
         't/hbo', 't/apple', 't/hulu', 't/nbc', 't/cbs', 't/abc', 't/fox'
     ]
     
-    # Common sitemap paths
+    # Common sitemap paths (only for high-value/recent content)
     SITEMAP_PATHS = [
         '/sitemap.xml',
         '/sitemap_index.xml',
-        '/sitemap',
-        '/sitemaps.xml',
+        '/news-sitemap.xml',
+        '/sitemap-news.xml',
+        '/sitemaps/articles/chunk-0.xml',  # Common pattern for recent content
     ]
     
     def __init__(self, base_url: str, timeout: int = 10):
@@ -86,7 +87,7 @@ class FeedDiscoverer:
         
     def discover_all(self) -> Dict[str, List[Dict]]:
         """
-        Discover all feeds and sitemaps from the website.
+        Discover all RSS/Atom feeds and selective sitemaps from the website.
         
         Returns:
             Dictionary with 'feeds' and 'sitemaps' lists
@@ -108,8 +109,8 @@ class FeedDiscoverer:
         category_feeds = self._check_category_feeds()
         results['feeds'].extend(category_feeds)
         
-        # Try to discover sitemaps
-        sitemaps = self._discover_sitemaps()
+        # Try to discover high-value sitemaps (for recent content only)
+        sitemaps = self._discover_selective_sitemaps()
         results['sitemaps'].extend(sitemaps)
         
         # Remove duplicates
@@ -340,224 +341,9 @@ class FeedDiscoverer:
             
         return None
     
-    def _discover_sitemaps(self) -> List[Dict]:
-        """
-        Discover sitemaps from robots.txt and common paths.
-        
-        Returns:
-            List of discovered sitemap dictionaries
-        """
-        sitemaps = []
-        sitemap_urls = []
-        
-        # Check robots.txt for sitemaps
-        robots_url = urljoin(self.base_url, '/robots.txt')
-        try:
-            response = self.session.get(robots_url, timeout=self.timeout)
-            if response.status_code == 200:
-                for line in response.text.splitlines():
-                    if line.lower().startswith('sitemap:'):
-                        sitemap_url = line.split(':', 1)[1].strip()
-                        if not sitemap_url.startswith('http'):
-                            sitemap_url = urljoin(self.base_url, sitemap_url)
-                        sitemap_urls.append(sitemap_url)
-                        logger.info(f"Found sitemap in robots.txt: {sitemap_url}")
-                        
-        except requests.RequestException as e:
-            logger.debug(f"Error fetching robots.txt: {e}")
-            
-        # Check common sitemap paths
-        for path in self.SITEMAP_PATHS:
-            sitemap_url = urljoin(self.base_url, path)
-            
-            try:
-                response = self.session.head(sitemap_url, timeout=self.timeout, allow_redirects=True)
-                
-                if response.status_code == 200:
-                    if sitemap_url not in sitemap_urls:
-                        sitemap_urls.append(sitemap_url)
-                        logger.info(f"Found sitemap at common path: {sitemap_url}")
-                        
-            except requests.RequestException:
-                # Silently skip
-                pass
-        
-        # Process all discovered sitemap URLs and expand sitemap indexes
-        for url in sitemap_urls:
-            expanded_sitemaps = self._expand_sitemap(url)
-            sitemaps.extend(expanded_sitemaps)
-                
-        return sitemaps
     
-    def discover_feeds_from_sitemap(self, sitemap_url: str) -> List[Dict]:
-        """
-        Discover RSS/Atom feed URLs from a sitemap.
-        
-        Args:
-            sitemap_url: URL of the sitemap to analyze
-            
-        Returns:
-            List of discovered feed dictionaries
-        """
-        feeds = []
-        
-        try:
-            response = self.session.get(sitemap_url, timeout=self.timeout)
-            response.raise_for_status()
-            
-            # Parse XML
-            root = ET.fromstring(response.content)
-            ns = {'ns': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
-            
-            # Check if this is a sitemap index
-            sitemap_elements = root.findall('ns:sitemap', ns)
-            if sitemap_elements:
-                # Process nested sitemaps
-                for sitemap_elem in sitemap_elements:
-                    loc_elem = sitemap_elem.find('ns:loc', ns)
-                    if loc_elem is not None and loc_elem.text:
-                        nested_url = loc_elem.text.strip()
-                        # Recursively discover feeds from nested sitemaps
-                        nested_feeds = self.discover_feeds_from_sitemap(nested_url)
-                        feeds.extend(nested_feeds)
-            else:
-                # Regular sitemap - look for RSS/Atom feed URLs
-                url_elements = root.findall('ns:url', ns)
-                for url_elem in url_elements:
-                    loc_elem = url_elem.find('ns:loc', ns)
-                    if loc_elem is not None and loc_elem.text:
-                        url = loc_elem.text.strip()
-                        # Check if this URL looks like a feed
-                        if self._is_feed_url(url):
-                            # Validate it's actually a feed
-                            feed_info = self.validate_feed(url)
-                            if feed_info:
-                                feeds.append(feed_info)
-                                logger.info(f"Found feed in sitemap: {url}")
-                                
-        except Exception as e:
-            logger.error(f"Error processing sitemap {sitemap_url}: {e}")
-            
-        return feeds
     
-    def _is_feed_url(self, url: str) -> bool:
-        """
-        Check if a URL looks like it might be a feed URL.
-        
-        Args:
-            url: URL to check
-            
-        Returns:
-            True if URL appears to be a feed
-        """
-        import re
-        url_lower = url.lower()
-        
-        # Exclude URLs that look like articles (have long numeric IDs)
-        if re.search(r'/\d{6,}/', url):
-            return False
-            
-        feed_indicators = [
-            '/rss', '/feed', '/atom', '.rss', '.xml',
-            '/blog/feed', '/news/feed', '/blog/rss', '/news/rss'
-        ]
-        
-        return any(indicator in url_lower for indicator in feed_indicators)
     
-    def _expand_sitemap(self, sitemap_url: str, max_depth: int = 2, current_depth: int = 0) -> List[Dict]:
-        """
-        Expand a sitemap URL, handling sitemap index files.
-        NOTE: This now only returns sitemap metadata, not for article fetching.
-        
-        Args:
-            sitemap_url: URL of the sitemap to expand
-            max_depth: Maximum depth for recursive expansion
-            current_depth: Current recursion depth
-            
-        Returns:
-            List of sitemap dictionaries (for reference only)
-        """
-        sitemaps = []
-        
-        if current_depth >= max_depth:
-            # Max depth reached, just return the sitemap as-is
-            sitemaps.append({
-                'url': sitemap_url,
-                'title': 'Sitemap',
-                'type': 'SITEMAP'
-            })
-            return sitemaps
-        
-        try:
-            response = self.session.get(sitemap_url, timeout=self.timeout)
-            response.raise_for_status()
-            
-            # Try to parse as XML
-            try:
-                root = ET.fromstring(response.content)
-                
-                # Define namespace
-                ns = {'ns': 'http://www.sitemaps.org/schemas/sitemap/0.9'}
-                
-                # Check if this is a sitemap index (contains <sitemap> elements)
-                sitemap_elements = root.findall('ns:sitemap', ns)
-                
-                if sitemap_elements:
-                    # This is a sitemap index - expand all referenced sitemaps
-                    logger.info(f"Found sitemap index at {sitemap_url} with {len(sitemap_elements)} sitemaps")
-                    
-                    for sitemap_elem in sitemap_elements:
-                        loc_elem = sitemap_elem.find('ns:loc', ns)
-                        if loc_elem is not None and loc_elem.text:
-                            nested_url = loc_elem.text.strip()
-                            logger.info(f"Found nested sitemap: {nested_url}")
-                            
-                            # Recursively expand nested sitemaps
-                            nested_sitemaps = self._expand_sitemap(
-                                nested_url, 
-                                max_depth=max_depth, 
-                                current_depth=current_depth + 1
-                            )
-                            sitemaps.extend(nested_sitemaps)
-                else:
-                    # This is a regular sitemap (contains <url> elements)
-                    url_elements = root.findall('ns:url', ns)
-                    
-                    if url_elements:
-                        # Valid sitemap with URLs
-                        sitemaps.append({
-                            'url': sitemap_url,
-                            'title': f'Sitemap ({len(url_elements)} URLs)',
-                            'type': 'SITEMAP'
-                        })
-                        logger.info(f"Found regular sitemap at {sitemap_url} with {len(url_elements)} URLs")
-                    else:
-                        # Empty or unrecognized format
-                        sitemaps.append({
-                            'url': sitemap_url,
-                            'title': 'Sitemap',
-                            'type': 'SITEMAP'
-                        })
-                        
-            except ET.ParseError as e:
-                # Not valid XML, treat as regular sitemap
-                logger.debug(f"Could not parse {sitemap_url} as XML: {e}")
-                sitemaps.append({
-                    'url': sitemap_url,
-                    'title': 'Sitemap',
-                    'type': 'SITEMAP'
-                })
-                
-        except requests.RequestException as e:
-            logger.error(f"Error fetching sitemap {sitemap_url}: {e}")
-            # Still add it as it might be accessible later
-            sitemaps.append({
-                'url': sitemap_url,
-                'title': 'Sitemap (unreachable)',
-                'type': 'SITEMAP'
-            })
-            
-        return sitemaps
     
     def _determine_feed_type(self, url: str, content_type: str) -> str:
         """
@@ -568,15 +354,13 @@ class FeedDiscoverer:
             content_type: Content-Type header value
             
         Returns:
-            Feed type (RSS, ATOM, or SITEMAP)
+            Feed type (RSS or ATOM)
         """
         url_lower = url.lower()
         content_lower = content_type.lower()
         
         if 'atom' in url_lower or 'atom' in content_lower:
             return 'ATOM'
-        elif 'sitemap' in url_lower:
-            return 'SITEMAP'
         else:
             return 'RSS'
     
@@ -645,3 +429,85 @@ class FeedDiscoverer:
             logger.error(f"Error validating feed {feed_url}: {e}")
             
         return None
+    
+    def _discover_selective_sitemaps(self) -> List[Dict]:
+        """
+        Discover sitemaps that contain recent content (selective processing).
+        
+        Returns:
+            List of discovered sitemap dictionaries
+        """
+        from .sitemap_processor import SelectiveSitemapProcessor
+        
+        sitemaps = []
+        processor = SelectiveSitemapProcessor()
+        
+        # Check robots.txt for sitemaps
+        robots_url = urljoin(self.base_url, '/robots.txt')
+        try:
+            response = self.session.get(robots_url, timeout=self.timeout)
+            if response.status_code == 200:
+                for line in response.text.splitlines():
+                    if line.lower().startswith('sitemap:'):
+                        sitemap_url = line.split(':', 1)[1].strip()
+                        if not sitemap_url.startswith('http'):
+                            sitemap_url = urljoin(self.base_url, sitemap_url)
+                        
+                        # Check if sitemap should be processed
+                        should_process, reason = processor.should_process_sitemap(sitemap_url)
+                        if should_process:
+                            # Get priority score
+                            priority = processor.get_sitemap_priority(sitemap_url)
+                            
+                            if priority >= 40:  # Only add medium-high priority sitemaps
+                                sitemaps.append({
+                                    'url': sitemap_url,
+                                    'title': f'Sitemap (Priority: {priority})',
+                                    'type': 'SITEMAP',
+                                    'priority': priority
+                                })
+                                logger.info(f"Found high-value sitemap in robots.txt: {sitemap_url} (priority: {priority})")
+                        else:
+                            logger.debug(f"Skipping sitemap: {reason}")
+                            
+        except requests.RequestException as e:
+            logger.debug(f"Error fetching robots.txt: {e}")
+        
+        # Check common sitemap paths for high-value sitemaps
+        for path in self.SITEMAP_PATHS:
+            sitemap_url = urljoin(self.base_url, path)
+            
+            try:
+                # Quick HEAD request to check if exists
+                response = self.session.head(sitemap_url, timeout=self.timeout, allow_redirects=True)
+                
+                if response.status_code == 200:
+                    # Check if this is a high-value sitemap
+                    should_process, reason = processor.should_process_sitemap(sitemap_url)
+                    if should_process:
+                        priority = processor.get_sitemap_priority(sitemap_url)
+                        
+                        if priority >= 40:  # Only add medium-high priority sitemaps
+                            # Avoid duplicates
+                            if not any(s['url'] == sitemap_url for s in sitemaps):
+                                sitemaps.append({
+                                    'url': sitemap_url,
+                                    'title': f'Sitemap at {path} (Priority: {priority})',
+                                    'type': 'SITEMAP',
+                                    'priority': priority
+                                })
+                                logger.info(f"Found sitemap at common path: {sitemap_url} (priority: {priority})")
+                                
+            except requests.RequestException:
+                # Silently skip - these are just guesses
+                pass
+        
+        # Sort by priority (highest first)
+        sitemaps.sort(key=lambda x: x.get('priority', 0), reverse=True)
+        
+        # Keep only top 3 sitemaps to avoid overwhelming the system
+        if len(sitemaps) > 3:
+            logger.info(f"Limiting to top 3 sitemaps from {len(sitemaps)} found")
+            sitemaps = sitemaps[:3]
+        
+        return sitemaps

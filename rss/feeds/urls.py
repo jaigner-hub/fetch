@@ -45,6 +45,9 @@ urlpatterns = [
     # Keyword filtering
     path('articles/keyword/<path:keyword>/', views.ArticlesByKeywordView.as_view(), name='articles-by-keyword'),
     
+    # Article Clusters
+    path('clusters/', views.article_clusters, name='article-clusters'),
+    
     # Generated Content URLs
     path('content/', views.GeneratedContentListView.as_view(), name='generated-content-list'),
     path('content/generate/', views.GenerateContentView.as_view(), name='generate-content'),

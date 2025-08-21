@@ -1,0 +1,272 @@
+{% extends "feeds/base.html" %}
+{% load feed_filters %}
+
+{% block title %}Article Clusters - RSS Aggregator{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h1>Article Clusters</h1>
+            <p class="text-muted">Groups of articles covering the same topics from multiple sources</p>
+        </div>
+        <div class="col-md-4 text-right">
+            {% if unanalyzed_count > 0 %}
+            <div class="alert alert-info">
+                <strong>{{ unanalyzed_count }}</strong> articles pending analysis
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="form-inline">
+                <div class="form-group mr-3">
+                    <label for="hours" class="mr-2">Time Window:</label>
+                    <select name="hours" id="hours" class="form-control" onchange="this.form.submit()">
+                        {% for option in time_options %}
+                        <option value="{{ option }}" {% if option == hours %}selected{% endif %}>
+                            {% if option == 24 %}24 hours{% elif option == 48 %}48 hours{% elif option == 72 %}3 days{% elif option == 168 %}1 week{% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group mr-3">
+                    <label for="min_size" class="mr-2">Minimum Cluster Size:</label>
+                    <select name="min_size" id="min_size" class="form-control" onchange="this.form.submit()">
+                        {% for option in size_options %}
+                        <option value="{{ option }}" {% if option == min_cluster_size %}selected{% endif %}>
+                            {{ option }} articles
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group mr-3">
+                    <label for="min_similarity" class="mr-2">Title Similarity:</label>
+                    <select name="min_similarity" id="min_similarity" class="form-control" onchange="this.form.submit()">
+                        {% for option in similarity_options %}
+                        <option value="{{ option }}" {% if option == min_similarity %}selected{% endif %}>
+                            {% widthratio option 1 100 %}% match
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary">Apply Filters</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Cluster Summary -->
+    <div class="alert alert-success">
+        Found <strong>{{ total_clusters }}</strong> article clusters 
+        (showing {% if page_obj.has_previous or page_obj.has_next %}page {{ page_obj.number }} of {{ paginator.num_pages }}{% else %}{{ clusters|length }}{% endif %}) in the last {{ hours }} hours
+    </div>
+
+    <!-- Clusters -->
+    {% if clusters %}
+        {% for cluster in clusters %}
+        <div class="card mb-4">
+            <div class="card-header bg-light">
+                <div class="row">
+                    <div class="col-md-8">
+                        <h5 class="mb-0">
+                            {% if cluster.event_type %}
+                            <span class="badge badge-warning">{{ cluster.event_type|title }}</span>
+                            {% endif %}
+                            {% if cluster.confidence %}
+                            <span class="badge badge-success">{{ cluster.confidence|floatformat:0 }}% confidence</span>
+                            {% endif %}
+                            <span class="badge badge-primary">{{ cluster.size }} articles</span>
+                            <span class="badge badge-info">{{ cluster.source_diversity }} sources</span>
+                            {% if cluster.time_span %}
+                            <span class="badge badge-secondary">{{ cluster.time_span|floatformat:1 }} hour span</span>
+                            {% endif %}
+                        </h5>
+                    </div>
+                    <div class="col-md-4 text-right">
+                        {% if cluster.latest %}
+                        <small class="text-muted">{{ cluster.latest|timesince }} ago</small>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- Cluster Title and Description -->
+                {% if cluster.title %}
+                <h4 class="text-primary">{{ cluster.title }}</h4>
+                {% endif %}
+                {% if cluster.description %}
+                <p class="lead">{{ cluster.description }}</p>
+                {% endif %}
+                
+                <!-- Topics -->
+                {% if cluster.topics %}
+                <div class="mb-3">
+                    <strong>Topics:</strong>
+                    {% for topic in cluster.topics %}
+                    <span class="badge badge-pill badge-warning">{{ topic }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <!-- Entities -->
+                {% if cluster.entities %}
+                <div class="mb-3">
+                    {% if cluster.entities.people %}
+                    <strong>People:</strong>
+                    {% for person in cluster.entities.people|slice:":5" %}
+                    <span class="badge badge-pill badge-info">{{ person }}</span>
+                    {% endfor %}
+                    {% endif %}
+                    {% if cluster.entities.organizations %}
+                    <strong>Organizations:</strong>
+                    {% for org in cluster.entities.organizations|slice:":5" %}
+                    <span class="badge badge-pill badge-success">{{ org }}</span>
+                    {% endfor %}
+                    {% endif %}
+                    {% if cluster.entities.locations %}
+                    <strong>Locations:</strong>
+                    {% for loc in cluster.entities.locations|slice:":5" %}
+                    <span class="badge badge-pill badge-secondary">{{ loc }}</span>
+                    {% endfor %}
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <!-- Articles in cluster -->
+                <div class="article-list">
+                    <h6>Articles in this cluster:</h6>
+                    <div class="list-group">
+                        {% for article in cluster.articles %}
+                        <div class="list-group-item">
+                            <div class="row">
+                                <div class="col-md-9">
+                                    <h6 class="mb-1">
+                                        <a href="{% url 'feeds:article-detail' article.pk %}" target="_blank">
+                                            {{ article.title|truncatechars:100 }}
+                                        </a>
+                                    </h6>
+                                    <p class="mb-1 text-muted">
+                                        <small>
+                                            <strong>{{ article.feed.website.name }}</strong> - 
+                                            {{ article.published_date|timesince }} ago
+                                            {% if article.author %}
+                                            by {{ article.author }}
+                                            {% endif %}
+                                        </small>
+                                    </p>
+                                    {% if article.summary %}
+                                    <p class="mb-0">{{ article.summary|truncatechars:200 }}</p>
+                                    {% endif %}
+                                </div>
+                                <div class="col-md-3 text-right">
+                                    <a href="{{ article.url }}" target="_blank" class="btn btn-sm btn-outline-primary">
+                                        Original Article
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- Generate Content Button -->
+                <div class="mt-3">
+                    <form method="post" action="{% url 'feeds:generate-content' %}" style="display: inline;">
+                        {% csrf_token %}
+                        {% for article in cluster.articles %}
+                        <input type="hidden" name="article_ids" value="{{ article.id }}">
+                        {% endfor %}
+                        <button type="submit" class="btn btn-success">
+                            <i class="fas fa-magic"></i> Generate Content from Cluster
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        <!-- Pagination Controls -->
+        {% if page_obj.has_other_pages %}
+        <nav aria-label="Cluster pagination">
+            <ul class="pagination justify-content-center">
+                {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page=1&hours={{ hours }}&min_size={{ min_cluster_size }}" aria-label="First">
+                            <span aria-hidden="true">&laquo;&laquo;</span>
+                        </a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}&hours={{ hours }}&min_size={{ min_cluster_size }}" aria-label="Previous">
+                            <span aria-hidden="true">&laquo;</span>
+                        </a>
+                    </li>
+                {% else %}
+                    <li class="page-item disabled">
+                        <span class="page-link">&laquo;&laquo;</span>
+                    </li>
+                    <li class="page-item disabled">
+                        <span class="page-link">&laquo;</span>
+                    </li>
+                {% endif %}
+                
+                {% for num in page_obj.paginator.page_range %}
+                    {% if page_obj.number == num %}
+                        <li class="page-item active">
+                            <span class="page-link">{{ num }} <span class="sr-only">(current)</span></span>
+                        </li>
+                    {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ num }}&hours={{ hours }}&min_size={{ min_cluster_size }}">{{ num }}</a>
+                        </li>
+                    {% endif %}
+                {% endfor %}
+                
+                {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.next_page_number }}&hours={{ hours }}&min_size={{ min_cluster_size }}" aria-label="Next">
+                            <span aria-hidden="true">&raquo;</span>
+                        </a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ paginator.num_pages }}&hours={{ hours }}&min_size={{ min_cluster_size }}" aria-label="Last">
+                            <span aria-hidden="true">&raquo;&raquo;</span>
+                        </a>
+                    </li>
+                {% else %}
+                    <li class="page-item disabled">
+                        <span class="page-link">&raquo;</span>
+                    </li>
+                    <li class="page-item disabled">
+                        <span class="page-link">&raquo;&raquo;</span>
+                    </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+        
+    {% else %}
+        <div class="alert alert-warning">
+            <h4>No article clusters found</h4>
+            <p>Try adjusting the filters or analyzing more articles.</p>
+            <p>Article clustering requires articles to be analyzed first. 
+               You can analyze articles from the <a href="{% url 'feeds:article-list' %}">Articles page</a>.</p>
+        </div>
+    {% endif %}
+</div>
+
+<style>
+    .article-list {
+        max-height: 600px;
+        overflow-y: auto;
+    }
+    .list-group-item {
+        border-left: 3px solid #007bff;
+    }
+    .list-group-item:hover {
+        background-color: #f8f9fa;
+    }
+</style>
+{% endblock %}

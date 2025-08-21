@@ -7,7 +7,7 @@ from feeds.tasks import discover_feeds_for_website
 
 
 class Command(BaseCommand):
-    help = 'Discover RSS feeds and sitemaps for a website'
+    help = 'Discover RSS and Atom feeds for a website'
     
     def add_arguments(self, parser):
         parser.add_argument(
