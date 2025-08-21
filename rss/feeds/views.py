@@ -11,9 +11,23 @@ from django.db.models import Count, Q, Max, Exists, OuterRef
 from django.utils import timezone
 from datetime import timedelta
 from urllib.parse import unquote
-from .models import Website, Feed, Article, FetchLog, ArticleAnalysis, GeneratedContent, ArticleCluster
+from .models import Website, Feed, Article, FetchLog, ArticleAnalysis, GeneratedContent, ArticleCluster, Project
 from .tasks import fetch_feed_content, discover_feeds_for_website, fetch_all_website_content, analyze_article_async
 from .article_analyzer import ArticleAnalyzer, ContentGenerator
+
+
+@login_required
+def switch_project(request, project_id):
+    """Switch to a different project."""
+    try:
+        project = Project.objects.get(id=project_id, active=True)
+        request.session['current_project_id'] = project.id
+        messages.success(request, f"Switched to project: {project.name}")
+    except Project.DoesNotExist:
+        messages.error(request, "Project not found")
+    
+    # Redirect to the referring page or home
+    return redirect(request.META.get('HTTP_REFERER', 'feeds:home'))
 
 
 class WebsiteListView(LoginRequiredMixin, ListView):
@@ -24,6 +38,12 @@ class WebsiteListView(LoginRequiredMixin, ListView):
     
     def get_queryset(self):
         queryset = super().get_queryset()
+        
+        # Filter by current project
+        project_id = self.request.session.get('current_project_id')
+        if project_id:
+            queryset = queryset.filter(project_id=project_id)
+        
         search = self.request.GET.get('search', '')
         if search:
             queryset = queryset.filter(
@@ -65,6 +85,16 @@ class WebsiteCreateView(LoginRequiredMixin, CreateView):
     success_url = reverse_lazy('feeds:website-list')
     
     def form_valid(self, form):
+        # Set the current project
+        project_id = self.request.session.get('current_project_id')
+        if project_id:
+            form.instance.project_id = project_id
+        else:
+            # Default to first project if none selected
+            project = Project.objects.filter(active=True).first()
+            if project:
+                form.instance.project = project
+        
         response = super().form_valid(form)
         messages.success(self.request, f"Website '{self.object.name}' created successfully!")
         # Trigger feed discovery asynchronously
@@ -113,6 +143,11 @@ class FeedListView(LoginRequiredMixin, ListView):
     
     def get_queryset(self):
         queryset = super().get_queryset().select_related('website')
+        
+        # Filter by current project
+        project_id = self.request.session.get('current_project_id')
+        if project_id:
+            queryset = queryset.filter(website__project_id=project_id)
         
         # Filter by website if specified
         website_id = self.request.GET.get('website')
@@ -199,6 +234,11 @@ class ArticleListView(LoginRequiredMixin, ListView):
     
     def get_queryset(self):
         queryset = super().get_queryset().select_related('feed', 'feed__website')
+        
+        # Filter by current project
+        project_id = self.request.session.get('current_project_id')
+        if project_id:
+            queryset = queryset.filter(feed__website__project_id=project_id)
         
         # Filter by feed
         feed_id = self.request.GET.get('feed')
@@ -428,8 +468,21 @@ def home_view(request):
     from django.conf import settings
     from datetime import timedelta
     
+    # Get current project
+    project_id = request.session.get('current_project_id')
+    
+    # Base querysets filtered by project
+    website_qs = Website.objects.all()
+    feed_qs = Feed.objects.all()
+    article_qs = Article.objects.all()
+    
+    if project_id:
+        website_qs = website_qs.filter(project_id=project_id)
+        feed_qs = feed_qs.filter(website__project_id=project_id)
+        article_qs = article_qs.filter(feed__website__project_id=project_id)
+    
     # Get scheduled websites info
-    scheduled_websites = Website.objects.filter(
+    scheduled_websites = website_qs.filter(
         active=True, 
         auto_fetch_enabled=True
     ).order_by('last_auto_fetch')
@@ -451,15 +504,17 @@ def home_view(request):
             })
     
     context = {
-        'website_count': Website.objects.filter(active=True).count(),
-        'feed_count': Feed.objects.filter(active=True).count(),
-        'article_count': Article.objects.count(),
+        'website_count': website_qs.filter(active=True).count(),
+        'feed_count': feed_qs.filter(active=True).count(),
+        'article_count': article_qs.count(),
         'scheduled_website_count': scheduled_websites.count(),
         'websites_due_soon': websites_due_soon,
-        'recent_articles': Article.objects.select_related('feed', 'feed__website')[:10],
-        'recent_fetch_logs': FetchLog.objects.select_related('feed', 'feed__website')[:10],
-        'feeds_with_errors': Feed.objects.filter(error_count__gt=0, active=True).select_related('website')[:5],
-        'claude_enabled': bool(settings.ANTHROPIC_API_KEY),
+        'recent_articles': article_qs.select_related('feed', 'feed__website')[:10],
+        'recent_fetch_logs': FetchLog.objects.filter(
+            feed__website__project_id=project_id if project_id else None
+        ).select_related('feed', 'feed__website')[:10] if project_id else FetchLog.objects.select_related('feed', 'feed__website')[:10],
+        'feeds_with_errors': feed_qs.filter(error_count__gt=0, active=True).select_related('website')[:5],
+        'claude_enabled': bool(getattr(settings, 'OPENROUTER_API_KEY', None)),
     }
     return render(request, 'feeds/home.html', context)
 

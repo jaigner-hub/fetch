@@ -1,0 +1,136 @@
+{% extends 'feeds/base.html' %}
+
+{% block title %}Manage Projects - RSS Feed Aggregator{% endblock %}
+
+{% block content %}
+<h2>Project Management</h2>
+
+<div style="margin-bottom: 1.5rem;">
+    <a href="{% url 'feeds:project-create' %}" class="btn btn-primary">Create New Project</a>
+</div>
+
+<style>
+    .project-card {
+        background: white;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 1rem;
+        align-items: start;
+    }
+    
+    .project-info h3 {
+        margin: 0 0 0.5rem 0;
+        color: #2c3e50;
+    }
+    
+    .project-stats {
+        display: flex;
+        gap: 2rem;
+        margin: 1rem 0;
+    }
+    
+    .stat-item {
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .stat-value {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #3498db;
+    }
+    
+    .stat-label {
+        color: #6c757d;
+        font-size: 0.875rem;
+    }
+    
+    .project-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .project-actions .btn {
+        white-space: nowrap;
+    }
+    
+    .current-badge {
+        background: #28a745;
+        color: white;
+        padding: 0.25rem 0.5rem;
+        border-radius: 3px;
+        font-size: 0.75rem;
+        margin-left: 0.5rem;
+    }
+    
+    .inactive-badge {
+        background: #dc3545;
+        color: white;
+        padding: 0.25rem 0.5rem;
+        border-radius: 3px;
+        font-size: 0.75rem;
+        margin-left: 0.5rem;
+    }
+</style>
+
+{% for project in projects %}
+<div class="project-card">
+    <div class="project-info">
+        <h3>
+            {{ project.name }}
+            {% if project.id == current_project.id %}
+                <span class="current-badge">CURRENT</span>
+            {% endif %}
+            {% if not project.active %}
+                <span class="inactive-badge">INACTIVE</span>
+            {% endif %}
+        </h3>
+        
+        {% if project.description %}
+        <p style="color: #6c757d; margin: 0.5rem 0;">{{ project.description }}</p>
+        {% endif %}
+        
+        <div class="project-stats">
+            <div class="stat-item">
+                <span class="stat-value">{{ project.website_count }}</span>
+                <span class="stat-label">Websites</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value">{{ project.feed_count }}</span>
+                <span class="stat-label">Feeds</span>
+            </div>
+            <div class="stat-item">
+                <span class="stat-value">{{ project.article_count }}</span>
+                <span class="stat-label">Articles</span>
+            </div>
+        </div>
+        
+        <div style="margin-top: 1rem;">
+            <small style="color: #6c757d;">
+                Created: {{ project.created_at|date:"M d, Y" }}
+                | Updated: {{ project.updated_at|date:"M d, Y" }}
+            </small>
+        </div>
+    </div>
+    
+    <div class="project-actions">
+        {% if project.id != current_project.id %}
+        <a href="{% url 'feeds:switch-project' project.id %}" class="btn btn-success">Switch To</a>
+        {% endif %}
+        <a href="{% url 'feeds:project-detail' project.pk %}" class="btn">View Details</a>
+        <a href="{% url 'feeds:project-edit' project.pk %}" class="btn">Edit</a>
+        <a href="{% url 'feeds:project-duplicate' project.pk %}" class="btn">Duplicate</a>
+        {% if project.id != current_project.id %}
+        <a href="{% url 'feeds:project-delete' project.pk %}" class="btn btn-danger">Delete</a>
+        {% endif %}
+    </div>
+</div>
+{% empty %}
+<p>No projects found. <a href="{% url 'feeds:project-create' %}">Create your first project</a>.</p>
+{% endfor %}
+{% endblock %}

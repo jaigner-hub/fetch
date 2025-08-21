@@ -48,6 +48,12 @@ app.conf.task_default_routing_key = 'celery'
 # Load task modules from all registered Django apps.
 app.autodiscover_tasks()
 
+# Import signal handlers to track task execution
+try:
+    from feeds import celery_signals
+except ImportError:
+    pass
+
 @app.task(bind=True)
 def debug_task(self):
     print(f'Request: {self.request!r}')

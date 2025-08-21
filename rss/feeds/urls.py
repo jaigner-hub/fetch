@@ -1,12 +1,26 @@
 from django.urls import path
 from . import views
 from . import api_views
+from . import views_celery_monitor
+from . import views_projects
 
 app_name = 'feeds'
 
 urlpatterns = [
     # Home/Dashboard
     path('', views.home_view, name='home'),
+    
+    # Project Management
+    path('projects/', views_projects.ProjectListView.as_view(), name='project-list'),
+    path('projects/create/', views_projects.ProjectCreateView.as_view(), name='project-create'),
+    path('projects/<int:pk>/', views_projects.project_detail, name='project-detail'),
+    path('projects/<int:pk>/edit/', views_projects.ProjectUpdateView.as_view(), name='project-edit'),
+    path('projects/<int:pk>/delete/', views_projects.ProjectDeleteView.as_view(), name='project-delete'),
+    path('projects/<int:pk>/duplicate/', views_projects.duplicate_project, name='project-duplicate'),
+    path('projects/<int:pk>/clear-articles/', views_projects.clear_project_articles, name='project-clear-articles'),
+    
+    # Project switching
+    path('switch-project/<int:project_id>/', views.switch_project, name='switch-project'),
     
     # Website URLs
     path('websites/', views.WebsiteListView.as_view(), name='website-list'),
@@ -47,6 +61,10 @@ urlpatterns = [
     
     # Article Clusters
     path('clusters/', views.article_clusters, name='article-clusters'),
+    
+    # Celery Monitor
+    path('monitor/', views_celery_monitor.celery_monitor, name='celery-monitor'),
+    path('api/celery-status/', views_celery_monitor.celery_status_api, name='celery-status-api'),
     
     # Generated Content URLs
     path('content/', views.GeneratedContentListView.as_view(), name='generated-content-list'),

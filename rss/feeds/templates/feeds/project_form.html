@@ -1,0 +1,84 @@
+{% extends 'feeds/base.html' %}
+
+{% block title %}{% if form.instance.pk %}Edit{% else %}Create{% endif %} Project - RSS Feed Aggregator{% endblock %}
+
+{% block content %}
+<h2>{% if form.instance.pk %}Edit Project: {{ form.instance.name }}{% else %}Create New Project{% endif %}</h2>
+
+<form method="post">
+    {% csrf_token %}
+    
+    <div style="margin-bottom: 1rem;">
+        <label for="{{ form.name.id_for_label }}">Project Name:</label>
+        {{ form.name }}
+        {% if form.name.errors %}
+        <div style="color: #dc3545; font-size: 0.875rem; margin-top: 0.25rem;">
+            {{ form.name.errors }}
+        </div>
+        {% endif %}
+    </div>
+    
+    <div style="margin-bottom: 1rem;">
+        <label for="{{ form.description.id_for_label }}">Description:</label>
+        {{ form.description }}
+        {% if form.description.errors %}
+        <div style="color: #dc3545; font-size: 0.875rem; margin-top: 0.25rem;">
+            {{ form.description.errors }}
+        </div>
+        {% endif %}
+    </div>
+    
+    <div style="margin-bottom: 1.5rem;">
+        <label>
+            {{ form.active }}
+            <span style="margin-left: 0.5rem;">Active</span>
+        </label>
+        <div style="color: #6c757d; font-size: 0.875rem; margin-top: 0.25rem;">
+            Inactive projects won't have their feeds fetched automatically
+        </div>
+        {% if form.active.errors %}
+        <div style="color: #dc3545; font-size: 0.875rem; margin-top: 0.25rem;">
+            {{ form.active.errors }}
+        </div>
+        {% endif %}
+    </div>
+    
+    <div>
+        <button type="submit" class="btn btn-primary">
+            {% if form.instance.pk %}Update{% else %}Create{% endif %} Project
+        </button>
+        <a href="{% url 'feeds:project-list' %}" class="btn">Cancel</a>
+    </div>
+</form>
+
+<style>
+    form input[type="text"],
+    form textarea {
+        width: 100%;
+        padding: 0.5rem;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        font-size: 1rem;
+    }
+    
+    form textarea {
+        min-height: 100px;
+        resize: vertical;
+    }
+    
+    form input[type="checkbox"] {
+        width: auto;
+        margin-right: 0.5rem;
+    }
+    
+    form label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+    }
+    
+    form input[type="checkbox"] + span {
+        font-weight: normal;
+    }
+</style>
+{% endblock %}

@@ -1,0 +1,175 @@
+{% extends 'feeds/base.html' %}
+
+{% block title %}{{ project.name }} - Project Details{% endblock %}
+
+{% block content %}
+<h2>{{ project.name }}</h2>
+
+<div style="margin-bottom: 1.5rem;">
+    <a href="{% url 'feeds:project-list' %}" class="btn">← Back to Projects</a>
+    <a href="{% url 'feeds:project-edit' project.pk %}" class="btn">Edit Project</a>
+    <a href="{% url 'feeds:project-duplicate' project.pk %}" class="btn">Duplicate</a>
+    {% if project.id != current_project.id %}
+    <a href="{% url 'feeds:switch-project' project.id %}" class="btn btn-success">Switch To This Project</a>
+    {% endif %}
+    <a href="{% url 'feeds:project-clear-articles' project.pk %}" class="btn btn-warning">Clear Articles</a>
+    {% if project.id != current_project.id %}
+    <a href="{% url 'feeds:project-delete' project.pk %}" class="btn btn-danger">Delete Project</a>
+    {% endif %}
+</div>
+
+{% if project.description %}
+<div style="background: #f8f9fa; padding: 1rem; border-radius: 5px; margin-bottom: 1.5rem;">
+    <p style="margin: 0;">{{ project.description }}</p>
+</div>
+{% endif %}
+
+<style>
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+    
+    .stat-card {
+        background: white;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        padding: 1.5rem;
+        text-align: center;
+    }
+    
+    .stat-card h3 {
+        margin: 0 0 0.5rem 0;
+        color: #6c757d;
+        font-size: 0.875rem;
+        text-transform: uppercase;
+    }
+    
+    .stat-value {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #3498db;
+    }
+    
+    .stat-sub {
+        color: #6c757d;
+        font-size: 0.875rem;
+        margin-top: 0.5rem;
+    }
+    
+    .section {
+        margin-bottom: 2rem;
+    }
+    
+    .section h3 {
+        color: #2c3e50;
+        border-bottom: 2px solid #3498db;
+        padding-bottom: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    
+    .item-list {
+        background: white;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        padding: 1rem;
+    }
+    
+    .item-list-entry {
+        padding: 0.5rem 0;
+        border-bottom: 1px solid #e9ecef;
+    }
+    
+    .item-list-entry:last-child {
+        border-bottom: none;
+    }
+</style>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <h3>Websites</h3>
+        <div class="stat-value">{{ website_count }}</div>
+        <div class="stat-sub">{{ active_websites }} active</div>
+    </div>
+    
+    <div class="stat-card">
+        <h3>Feeds</h3>
+        <div class="stat-value">{{ feed_count }}</div>
+        <div class="stat-sub">{{ active_feeds }} active</div>
+    </div>
+    
+    <div class="stat-card">
+        <h3>Articles</h3>
+        <div class="stat-value">{{ article_count }}</div>
+    </div>
+    
+    <div class="stat-card">
+        <h3>Feed Types</h3>
+        <div style="margin-top: 1rem;">
+            <div>RSS: <strong>{{ rss_feeds }}</strong></div>
+            <div>ATOM: <strong>{{ atom_feeds }}</strong></div>
+            <div>SITEMAP: <strong>{{ sitemap_feeds }}</strong></div>
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <h3>Recent Websites</h3>
+    <div class="item-list">
+        {% for website in recent_websites %}
+        <div class="item-list-entry">
+            <strong>{{ website.name }}</strong>
+            <small style="float: right; color: #6c757d;">
+                Added {{ website.created_at|date:"M d, Y" }}
+            </small>
+            <br>
+            <small>{{ website.url }}</small>
+        </div>
+        {% empty %}
+        <p>No websites in this project yet.</p>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="section">
+    <h3>Recent Articles</h3>
+    <div class="item-list">
+        {% for article in recent_articles %}
+        <div class="item-list-entry">
+            <strong>{{ article.title|truncatewords:10 }}</strong>
+            <br>
+            <small>
+                {{ article.feed.website.name }} - {{ article.fetched_at|date:"M d, H:i" }}
+            </small>
+        </div>
+        {% empty %}
+        <p>No articles in this project yet.</p>
+        {% endfor %}
+    </div>
+</div>
+
+<div class="section">
+    <h3>Project Information</h3>
+    <div class="item-list">
+        <div class="item-list-entry">
+            <strong>Created:</strong> {{ project.created_at|date:"M d, Y H:i" }}
+        </div>
+        <div class="item-list-entry">
+            <strong>Last Updated:</strong> {{ project.updated_at|date:"M d, Y H:i" }}
+        </div>
+        <div class="item-list-entry">
+            <strong>Status:</strong> 
+            {% if project.active %}
+                <span style="color: #28a745;">Active</span>
+            {% else %}
+                <span style="color: #dc3545;">Inactive</span>
+            {% endif %}
+        </div>
+        <div class="item-list-entry">
+            <strong>Slug:</strong> {{ project.slug }}
+        </div>
+    </div>
+</div>
+{% endblock %}

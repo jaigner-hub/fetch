@@ -1,0 +1,311 @@
+{% extends 'feeds/base.html' %}
+
+{% block title %}Celery Task Monitor - RSS Feed Aggregator{% endblock %}
+
+{% block content %}
+<style>
+    .monitor-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+    
+    .monitor-card {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        padding: 1rem;
+    }
+    
+    .monitor-card h3 {
+        margin: 0 0 0.5rem 0;
+        font-size: 1rem;
+        color: #495057;
+    }
+    
+    .monitor-value {
+        font-size: 2rem;
+        font-weight: bold;
+        color: #212529;
+    }
+    
+    .monitor-label {
+        color: #6c757d;
+        font-size: 0.875rem;
+    }
+    
+    .status-badge {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        border-radius: 3px;
+        font-size: 0.75rem;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+    
+    .status-success { background: #d4edda; color: #155724; }
+    .status-failure { background: #f8d7da; color: #721c24; }
+    .status-pending { background: #fff3cd; color: #856404; }
+    .status-started { background: #d1ecf1; color: #0c5460; }
+    
+    .worker-card {
+        background: #e7f3ff;
+        border: 1px solid #b3d7ff;
+        border-radius: 5px;
+        padding: 0.75rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .schedule-table {
+        width: 100%;
+        background: white;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        overflow: hidden;
+    }
+    
+    .schedule-table th {
+        background: #f8f9fa;
+        padding: 0.75rem;
+        text-align: left;
+        border-bottom: 2px solid #dee2e6;
+    }
+    
+    .schedule-table td {
+        padding: 0.75rem;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    #live-indicator {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        background: #28a745;
+        border-radius: 50%;
+        animation: pulse 2s infinite;
+        margin-left: 0.5rem;
+    }
+    
+    @keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.5; }
+        100% { opacity: 1; }
+    }
+</style>
+
+<h2>Celery Task Monitor <span id="live-indicator" title="Live updates every 5 seconds"></span></h2>
+
+<!-- Statistics Cards -->
+<div class="monitor-grid">
+    <div class="monitor-card">
+        <h3>Worker Processes</h3>
+        <div class="monitor-value" id="worker-count">{{ total_processes|default:"0" }}</div>
+        <div class="monitor-label">{{ workers|length|default:"0" }} Workers Online</div>
+    </div>
+    
+    <div class="monitor-card">
+        <h3>Tasks (24h)</h3>
+        <div class="monitor-value">{{ task_stats.total|default:"0" }}</div>
+        <div class="monitor-label">
+            <span style="color: #28a745;">✓ {{ task_stats.success|default:"0" }}</span> | 
+            <span style="color: #dc3545;">✗ {{ task_stats.failure|default:"0" }}</span>
+        </div>
+    </div>
+    
+    <div class="monitor-card">
+        <h3>Articles Fetched (24h)</h3>
+        <div class="monitor-value">{{ fetch_stats.articles_fetched|default:"0" }}</div>
+        <div class="monitor-label">{{ fetch_stats.articles_updated|default:"0" }} updated</div>
+    </div>
+    
+    <div class="monitor-card">
+        <h3>Queue Size</h3>
+        <div class="monitor-value" id="queue-size">{{ queue_size|default:"0" }}</div>
+        <div class="monitor-label">Tasks Waiting</div>
+    </div>
+</div>
+
+<!-- Scheduled Tasks -->
+<div style="margin-bottom: 2rem;">
+    <h3>Scheduled Tasks</h3>
+    <table class="schedule-table">
+        <thead>
+            <tr>
+                <th>Task Name</th>
+                <th>Schedule</th>
+                <th>Last Run</th>
+                <th>Status</th>
+                <th>Next Run</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for task in scheduled_tasks %}
+            <tr>
+                <td><strong>{{ task.name }}</strong><br><small>{{ task.task }}</small></td>
+                <td>{{ task.schedule }}</td>
+                <td>
+                    {% if task.last_run %}
+                        {{ task.last_run|date:"M d, H:i" }}
+                    {% else %}
+                        <span style="color: #6c757d;">Never</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if task.last_status == 'SUCCESS' %}
+                        <span class="status-badge status-success">Success</span>
+                    {% elif task.last_status == 'FAILURE' %}
+                        <span class="status-badge status-failure">Failed</span>
+                    {% else %}
+                        <span class="status-badge status-pending">{{ task.last_status }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ task.next_run|date:"M d, H:i:s" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Workers Status -->
+{% if workers %}
+<div style="margin-bottom: 2rem;">
+    <h3>Active Workers</h3>
+    {% for worker in workers %}
+    <div class="worker-card">
+        <strong>{{ worker.name }}</strong> - 
+        <span style="color: #0056b3;">{{ worker.active_tasks }} active task{{ worker.active_tasks|pluralize }}</span>
+        {% if worker.tasks %}
+        <ul style="margin: 0.5rem 0 0 0; padding-left: 1.5rem;">
+            {% for task in worker.tasks %}
+            <li><small>{{ task.name }} ({{ task.id|slice:":8" }}...)</small></li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<!-- Recent Task Executions -->
+<div style="margin-bottom: 2rem;">
+    <h3>Recent Task Executions</h3>
+    <table class="schedule-table">
+        <thead>
+            <tr>
+                <th>Task</th>
+                <th>Started</th>
+                <th>Runtime</th>
+                <th>Status</th>
+                <th>Result</th>
+            </tr>
+        </thead>
+        <tbody id="recent-tasks-tbody">
+            {% for task in recent_tasks %}
+            <tr>
+                <td>{{ task.task_name|slice:"11:" }}</td>
+                <td>{{ task.started_at|date:"H:i:s" }}</td>
+                <td>
+                    {% if task.runtime_seconds %}
+                        {{ task.runtime_seconds|floatformat:1 }}s
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="status-badge status-{{ task.status|lower }}">{{ task.status }}</span>
+                </td>
+                <td>
+                    {% if task.articles_fetched > 0 %}
+                        <strong>{{ task.articles_fetched }} articles</strong>
+                    {% endif %}
+                    {{ task.result|truncatewords:10 }}
+                    {% if task.error %}
+                        <span style="color: #dc3545;">{{ task.error|truncatewords:10 }}</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Recent Articles -->
+{% if recent_articles %}
+<div style="margin-bottom: 2rem;">
+    <h3>Recently Fetched Articles</h3>
+    <div style="background: white; border: 1px solid #dee2e6; border-radius: 5px; padding: 1rem;">
+        {% for article in recent_articles %}
+        <div style="margin-bottom: 0.5rem; padding-bottom: 0.5rem; border-bottom: 1px solid #e9ecef;">
+            <strong>{{ article.title|truncatewords:10 }}</strong><br>
+            <small>
+                {{ article.feed.website.name }} - {{ article.fetched_at|date:"H:i:s" }}
+            </small>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<script>
+// Auto-refresh statistics every 5 seconds
+function updateStatus() {
+    fetch('{% url "feeds:celery-status-api" %}')
+        .then(response => response.json())
+        .then(data => {
+            // Update worker count  
+            document.getElementById('worker-count').textContent = data.total_processes || '0';
+            
+            // Update queue size
+            document.getElementById('queue-size').textContent = data.active_tasks || '0';
+            
+            // Update countdowns
+            updateCountdowns();
+        })
+        .catch(error => console.error('Error updating status:', error));
+}
+
+function updateCountdowns() {
+    // Update time until next run for scheduled tasks
+    const now = new Date();
+    document.querySelectorAll('.countdown').forEach(elem => {
+        const row = elem.closest('tr');
+        const nextRunCell = row.cells[4];
+        const nextRunText = nextRunCell.textContent;
+        
+        if (nextRunText) {
+            // Parse the date (assuming format "MMM dd, HH:mm:ss")
+            const nextRun = new Date(nextRunText);
+            if (!isNaN(nextRun)) {
+                const diff = nextRun - now;
+                if (diff > 0) {
+                    const hours = Math.floor(diff / (1000 * 60 * 60));
+                    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+                    const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+                    
+                    if (hours > 0) {
+                        elem.textContent = `${hours}h ${minutes}m ${seconds}s`;
+                    } else if (minutes > 0) {
+                        elem.textContent = `${minutes}m ${seconds}s`;
+                    } else {
+                        elem.textContent = `${seconds}s`;
+                    }
+                } else {
+                    elem.textContent = 'Overdue';
+                    elem.classList.add('overdue');
+                }
+            }
+        }
+    });
+}
+
+// Update every 5 seconds
+setInterval(updateStatus, 5000);
+
+// Update countdowns every second
+setInterval(updateCountdowns, 1000);
+
+// Initial countdown update
+updateCountdowns();
+</script>
+{% endblock %}

@@ -43,16 +43,6 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="form-group mr-3">
-                    <label for="min_similarity" class="mr-2">Title Similarity:</label>
-                    <select name="min_similarity" id="min_similarity" class="form-control" onchange="this.form.submit()">
-                        {% for option in similarity_options %}
-                        <option value="{{ option }}" {% if option == min_similarity %}selected{% endif %}>
-                            {% widthratio option 1 100 %}% match
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
                 <button type="submit" class="btn btn-primary">Apply Filters</button>
             </form>
         </div>

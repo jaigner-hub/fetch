@@ -1,0 +1,39 @@
+{% extends 'feeds/base.html' %}
+
+{% block title %}Clear Articles - RSS Feed Aggregator{% endblock %}
+
+{% block content %}
+<h2>Clear Articles from Project: {{ project.name }}</h2>
+
+<div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 5px; padding: 1rem; margin-bottom: 1.5rem;">
+    <strong>⚠️ Warning:</strong> This will permanently delete all articles from this project!
+</div>
+
+<div style="background: #f8f9fa; padding: 1.5rem; border-radius: 5px; margin-bottom: 1.5rem;">
+    <h3 style="color: #dc3545; margin-top: 0;">This will delete:</h3>
+    <p style="font-size: 1.5rem; font-weight: bold; color: #dc3545; margin: 1rem 0;">
+        {{ article_count }} article{{ article_count|pluralize }}
+    </p>
+    
+    <h3>This will NOT affect:</h3>
+    <ul>
+        <li>Websites and their configurations</li>
+        <li>Feed URLs and settings</li>
+        <li>The project itself</li>
+    </ul>
+    
+    <p style="margin-bottom: 0; color: #6c757d;">
+        This is useful when you want to start fresh with article collection while keeping all your feed configurations.
+    </p>
+</div>
+
+<form method="post">
+    {% csrf_token %}
+    <p>Are you sure you want to delete all <strong>{{ article_count }}</strong> article{{ article_count|pluralize }} from the project <strong>"{{ project.name }}"</strong>?</p>
+    
+    <div>
+        <button type="submit" class="btn btn-danger">Yes, Delete All Articles</button>
+        <a href="{% url 'feeds:project-detail' project.pk %}" class="btn">Cancel</a>
+    </div>
+</form>
+{% endblock %}

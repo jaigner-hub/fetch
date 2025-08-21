@@ -33,7 +33,7 @@
     <a href="{% url 'feeds:website-edit' website.pk %}" class="btn">Edit</a>
     <form method="post" action="{% url 'feeds:website-discover-feeds' website.pk %}" style="display: inline;" id="discover-feeds-form">
         {% csrf_token %}
-        <button type="submit" class="btn btn-success" id="discover-feeds-btn" title="Use Claude AI to intelligently discover RSS feeds">Discover Feeds (AI)</button>
+        <button type="submit" class="btn btn-success" id="discover-feeds-btn" title="Use AI to intelligently discover RSS feeds via OpenRouter">Discover Feeds (AI)</button>
     </form>
     <form method="post" action="{% url 'feeds:website-fetch-all' website.pk %}" style="display: inline;" id="fetch-all-form">
         {% csrf_token %}

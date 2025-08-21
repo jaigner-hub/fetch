@@ -3,6 +3,22 @@ from django.utils import timezone
 import hashlib
 
 
+class Project(models.Model):
+    """Project to organize feeds and content."""
+    name = models.CharField(max_length=200, unique=True)
+    slug = models.SlugField(max_length=200, unique=True)
+    description = models.TextField(blank=True)
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['name']
+    
+    def __str__(self):
+        return self.name
+
+
 class Website(models.Model):
     """Model to store websites to crawl for RSS and Atom feeds."""
     FETCH_INTERVAL_CHOICES = [
@@ -16,7 +32,8 @@ class Website(models.Model):
         (1440, 'Daily'),
     ]
     
-    url = models.URLField(max_length=2048, unique=True, help_text="Base URL of the website")
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='websites', null=True)
+    url = models.URLField(max_length=2048, help_text="Base URL of the website")
     name = models.CharField(max_length=255, help_text="Name of the website")
     active = models.BooleanField(default=True, help_text="Whether to actively crawl this website")
     
@@ -34,9 +51,10 @@ class Website(models.Model):
     
     class Meta:
         ordering = ['name']
+        unique_together = [['project', 'url']]
     
     def __str__(self):
-        return f"{self.name} ({self.url})"
+        return f"{self.name} ({self.project.name if self.project else 'No Project'})"
     
     def is_due_for_fetch(self):
         """Check if this website is due for content fetching."""
@@ -342,3 +360,35 @@ class FetchLog(models.Model):
     def __str__(self):
         status = "Success" if self.success else "Failed"
         return f"{self.feed} - {self.started_at} - {status}"
+
+
+class TaskExecution(models.Model):
+    """Track Celery task executions for monitoring."""
+    task_name = models.CharField(max_length=200)
+    task_id = models.CharField(max_length=100, unique=True)
+    status = models.CharField(max_length=20, choices=[
+        ('PENDING', 'Pending'),
+        ('STARTED', 'Started'),
+        ('SUCCESS', 'Success'),
+        ('FAILURE', 'Failure'),
+        ('RETRY', 'Retry'),
+    ])
+    started_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    result = models.TextField(blank=True)
+    error = models.TextField(blank=True)
+    runtime_seconds = models.FloatField(null=True, blank=True)
+    
+    # Statistics for fetch tasks
+    articles_fetched = models.IntegerField(default=0)
+    feeds_processed = models.IntegerField(default=0)
+    
+    class Meta:
+        ordering = ['-started_at']
+        indexes = [
+            models.Index(fields=['-started_at']),
+            models.Index(fields=['task_name', '-started_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.task_name} - {self.status} ({self.started_at})"

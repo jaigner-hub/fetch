@@ -1,0 +1,44 @@
+{% extends 'feeds/base.html' %}
+
+{% block title %}Duplicate Project - RSS Feed Aggregator{% endblock %}
+
+{% block content %}
+<h2>Duplicate Project: {{ project.name }}</h2>
+
+<div style="background: #d1ecf1; border: 1px solid #0c5460; border-radius: 5px; padding: 1rem; margin-bottom: 1.5rem;">
+    <strong>ℹ️ Note:</strong> This will copy all websites and feeds, but NOT the articles. The new project will start with an empty article database.
+</div>
+
+<div style="background: #f8f9fa; padding: 1.5rem; border-radius: 5px; margin-bottom: 1.5rem;">
+    <h3 style="margin-top: 0;">What will be duplicated:</h3>
+    <ul>
+        <li>All websites ({{ project.websites.count }})</li>
+        <li>All feeds from those websites</li>
+        <li>Feed settings and configurations</li>
+    </ul>
+    
+    <h3>What will NOT be duplicated:</h3>
+    <ul>
+        <li>Articles</li>
+        <li>Fetch history</li>
+        <li>Error logs</li>
+    </ul>
+</div>
+
+<form method="post">
+    {% csrf_token %}
+    
+    <div style="margin-bottom: 1.5rem;">
+        <label for="name">New Project Name:</label>
+        <input type="text" name="name" id="name" required 
+               placeholder="e.g., {{ project.name }} - Copy"
+               style="width: 100%; padding: 0.5rem; border: 1px solid #ced4da; border-radius: 4px; font-size: 1rem;">
+        <small style="color: #6c757d;">Enter a unique name for the duplicated project</small>
+    </div>
+    
+    <div>
+        <button type="submit" class="btn btn-primary">Create Duplicate</button>
+        <a href="{% url 'feeds:project-detail' project.pk %}" class="btn">Cancel</a>
+    </div>
+</form>
+{% endblock %}
