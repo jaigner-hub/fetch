@@ -75,18 +75,96 @@ class ArticleAnalyzer:
     """Analyzes articles for summaries, topics, and similarity."""
     
     def __init__(self):
-        """Initialize the analyzer with Claude client."""
-        api_key = settings.ANTHROPIC_API_KEY
-        if api_key:
-            self.client = anthropic.Anthropic(api_key=api_key)
+        """Initialize the analyzer with OpenRouter or Claude client."""
+        # Try OpenRouter first
+        self.openrouter_api_key = getattr(settings, 'OPENROUTER_API_KEY', None)
+        if self.openrouter_api_key:
+            logger.info("ArticleAnalyzer using OpenRouter API")
+            self.use_openrouter = True
+            self.client = None  # We'll use requests directly for OpenRouter
         else:
-            self.client = None
-            logger.warning("ANTHROPIC_API_KEY not configured - Claude features will be unavailable")
+            # Fall back to Claude if available
+            api_key = settings.ANTHROPIC_API_KEY
+            if api_key:
+                self.client = anthropic.Anthropic(api_key=api_key)
+                self.use_openrouter = False
+                logger.info("ArticleAnalyzer using Claude API")
+            else:
+                self.client = None
+                self.use_openrouter = False
+                logger.warning("Neither OPENROUTER_API_KEY nor ANTHROPIC_API_KEY configured - AI features will be unavailable")
+        
         self.vectorizer = TfidfVectorizer(
             max_features=1000,
             stop_words='english',
             ngram_range=(1, 2)
         )
+    
+    @retry_on_overload(max_retries=8, initial_delay=3, backoff_factor=1.5, max_delay=30)
+    def _call_openrouter_api(self, prompt: str, temperature: float = 0.3, max_tokens: int = 2000) -> Optional[str]:
+        """
+        Call OpenRouter API for article analysis.
+        
+        Args:
+            prompt: The prompt to send
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            
+        Returns:
+            Generated text or None if error
+        """
+        if not self.openrouter_api_key:
+            raise Exception("OpenRouter API not configured")
+            
+        headers = {
+            "Authorization": f"Bearer {self.openrouter_api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://rss-aggregator.com",
+            "X-Title": "RSS Article Analyzer"
+        }
+        
+        messages = [
+            {
+                "role": "system",
+                "content": "You are an expert at analyzing articles, extracting key information, and providing structured summaries."
+            },
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+        
+        data = {
+            "model": "anthropic/claude-3.5-sonnet",  # Using Claude via OpenRouter
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+        
+        try:
+            response = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json=data,
+                timeout=60
+            )
+            response.raise_for_status()
+            
+            result = response.json()
+            if 'choices' in result and len(result['choices']) > 0:
+                return result['choices'][0]['message']['content']
+            else:
+                logger.error(f"Unexpected OpenRouter response format: {result}")
+                return None
+                
+        except requests.RequestException as e:
+            logger.error(f"OpenRouter API request failed: {e}")
+            if hasattr(e, 'response') and e.response:
+                logger.error(f"Response content: {e.response.text}")
+            raise  # Re-raise for retry decorator
+        except Exception as e:
+            logger.error(f"Error processing OpenRouter response: {e}")
+            raise
     
     def clean_html(self, html_content: str) -> str:
         """Remove HTML tags and clean text."""
@@ -173,8 +251,16 @@ Please respond in JSON format. Extract actual entity names from the article:
 }}"""
         
         try:
-            # Use a helper with retry logic - using Haiku model for efficiency
-            result_text = self._call_claude_api_haiku(prompt)
+            # Use OpenRouter if available, otherwise fall back to Claude
+            if self.use_openrouter and self.openrouter_api_key:
+                result_text = self._call_openrouter_api(prompt, temperature=0.3, max_tokens=1500)
+                if not result_text:
+                    raise Exception("OpenRouter API returned empty response")
+            elif self.client:
+                # Fall back to Claude API - using Haiku model for efficiency
+                result_text = self._call_claude_api_haiku(prompt)
+            else:
+                raise Exception("No AI API configured - please set OPENROUTER_API_KEY or ANTHROPIC_API_KEY")
             
             # Extract JSON from response
             json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
@@ -371,16 +457,79 @@ class ContentGenerator:
     """Generates new content based on multiple source articles."""
     
     def __init__(self):
-        """Initialize the content generator with Claude client."""
-        api_key = settings.ANTHROPIC_API_KEY
-        logger.info(f"ContentGenerator init - ANTHROPIC_API_KEY from settings: {api_key[:20]}..." if api_key else "ContentGenerator init - ANTHROPIC_API_KEY not set")
-        if api_key:
-            self.client = anthropic.Anthropic(api_key=api_key)
+        """Initialize the content generator with OpenRouter or Claude client."""
+        # Try OpenRouter first
+        self.openrouter_api_key = getattr(settings, 'OPENROUTER_API_KEY', None)
+        if self.openrouter_api_key:
+            logger.info("ContentGenerator using OpenRouter API")
+            self.use_openrouter = True
+            self.client = None  # We'll use requests directly for OpenRouter
         else:
-            self.client = None
-            logger.warning("ANTHROPIC_API_KEY not configured - Claude features will be unavailable")
+            # Fall back to Claude if available
+            api_key = settings.ANTHROPIC_API_KEY
+            logger.info(f"ContentGenerator init - ANTHROPIC_API_KEY from settings: {api_key[:20]}..." if api_key else "ContentGenerator init - ANTHROPIC_API_KEY not set")
+            if api_key:
+                self.client = anthropic.Anthropic(api_key=api_key)
+                self.use_openrouter = False
+            else:
+                self.client = None
+                self.use_openrouter = False
+                logger.warning("Neither OPENROUTER_API_KEY nor ANTHROPIC_API_KEY configured - AI features will be unavailable")
+        
         self.keygrip_api_key = getattr(settings, 'KEYGRIP_API_KEY', 'zrag_4DCDDfwBj4wAMY1-kRGXk7_g2Vcpyz068JEt2iRqsVc')
         self.keygrip_api_url = getattr(settings, 'KEYGRIP_API_URL', 'https://stage.keygrip.ai/api/v1/query/')
+    
+    @retry_on_overload(max_retries=8, initial_delay=3, backoff_factor=1.5, max_delay=30)
+    def _call_openrouter_api(self, messages: List[Dict], temperature: float = 0.7, max_tokens: int = 3000) -> Optional[str]:
+        """
+        Call OpenRouter API to generate content.
+        
+        Args:
+            messages: List of message dicts with 'role' and 'content'
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            
+        Returns:
+            Generated text or None if error
+        """
+        headers = {
+            "Authorization": f"Bearer {self.openrouter_api_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://rss-aggregator.com",
+            "X-Title": "RSS Content Generator"
+        }
+        
+        data = {
+            "model": "anthropic/claude-3.5-sonnet",  # Using Claude via OpenRouter
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+        
+        try:
+            response = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers=headers,
+                json=data,
+                timeout=60
+            )
+            response.raise_for_status()
+            
+            result = response.json()
+            if 'choices' in result and len(result['choices']) > 0:
+                return result['choices'][0]['message']['content']
+            else:
+                logger.error(f"Unexpected OpenRouter response format: {result}")
+                return None
+                
+        except requests.RequestException as e:
+            logger.error(f"OpenRouter API request failed: {e}")
+            if hasattr(e, 'response') and e.response:
+                logger.error(f"Response content: {e.response.text}")
+            raise  # Re-raise for retry decorator
+        except Exception as e:
+            logger.error(f"Error processing OpenRouter response: {e}")
+            raise
     
     @retry_on_overload(max_retries=8, initial_delay=3, backoff_factor=1.5, max_delay=30)
     def _call_keygrip_api(self, payload: Dict, headers: Dict) -> Dict:
@@ -780,20 +929,40 @@ Writing Style: {style_instructions.get(style, style_instructions['news'])}
 Source Articles:
 {sources_text}
 
-Generate the article in JSON format:
+Please generate the article and return it in the following JSON format. Make sure the JSON is valid and properly escaped:
 {{
     "title": "Compelling title for the new article",
     "subtitle": "Optional subtitle or lead",
-    "content": "The full article content with HTML formatting",
+    "content": "The full article content with HTML formatting (use <p>, <h2>, <h3> tags, etc.)",
     "summary": "2-3 sentence summary",
     "topics": ["topic1", "topic2"],
-    "sources_used": ["Source 1 title", "Source 2 title", ...],
+    "sources_used": ["Source 1 title", "Source 2 title"],
     "suggested_media": ["Description of relevant images or media to include"]
-}}"""
+}}
+
+Important: Ensure all quotes within string values are properly escaped with backslashes. The content field should contain HTML-formatted article text, not JSON."""
         
         try:
-            # Use the helper method with retry logic
-            result_text = self._call_claude_api(prompt)
+            # Use OpenRouter if available, otherwise fall back to Claude
+            if self.use_openrouter and self.openrouter_api_key:
+                messages = [
+                    {
+                        "role": "system",
+                        "content": "You are an expert content writer who creates engaging, accurate articles based on source material."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
+                result_text = self._call_openrouter_api(messages, temperature=0.7, max_tokens=3000)
+                if not result_text:
+                    raise Exception("OpenRouter API returned empty response")
+            elif self.client:
+                # Fall back to Claude API
+                result_text = self._call_claude_api(prompt)
+            else:
+                raise Exception("No AI API configured - please set OPENROUTER_API_KEY or ANTHROPIC_API_KEY")
             
             # Extract JSON from response
             json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
@@ -810,23 +979,116 @@ Generate the article in JSON format:
                         cleaned = re.sub(r':\s*"([^"]*)"', lambda m: f': "{m.group(1).replace(chr(10), " ").replace(chr(13), " ").replace(chr(9), " ")}"', json_match.group())
                         result = json.loads(cleaned)
                     except:
-                        # Final fallback
+                        # Try one more approach - extract just the content field if possible
+                        content_pattern = r'"content"\s*:\s*"((?:[^"\\]|\\.)*)"\s*[,}]'
+                        content_match = re.search(content_pattern, result_text, re.DOTALL)
+                        if content_match:
+                            extracted_content = content_match.group(1)
+                            # Unescape the content
+                            extracted_content = extracted_content.replace('\\n', '\n').replace('\\"', '"').replace('\\\\', '\\')
+                            
+                            # Also try to get the title
+                            title_pattern = r'"title"\s*:\s*"((?:[^"\\]|\\.)*)"\s*[,}]'
+                            title_match = re.search(title_pattern, result_text)
+                            extracted_title = "Generated Article"
+                            if title_match:
+                                extracted_title = title_match.group(1).replace('\\n', ' ').replace('\\"', '"').replace('\\\\', '\\')
+                            
+                            result = {
+                                "title": extracted_title,
+                                "content": extracted_content,
+                                "summary": "",
+                                "topics": [],
+                                "sources_used": [a.title for a in source_articles]
+                            }
+                        else:
+                            # Final fallback - clean the text of JSON artifacts
+                            cleaned_text = result_text
+                            # Remove JSON wrapper if present
+                            cleaned_text = re.sub(r'^\s*\{.*?"content"\s*:\s*"', '', cleaned_text, flags=re.DOTALL)
+                            cleaned_text = re.sub(r'"\s*,.*?\}\s*$', '', cleaned_text, flags=re.DOTALL)
+                            cleaned_text = cleaned_text.replace('\\n', '\n').replace('\\"', '"').replace('\\\\', '\\')
+                            cleaned_text = cleaned_text.strip()
+                            
+                            result = {
+                                "title": "Generated Article",
+                                "content": cleaned_text if cleaned_text else "Error: Could not extract content from response",
+                                "summary": "",
+                                "topics": [],
+                                "sources_used": [a.title for a in source_articles]
+                            }
+            else:
+                # Fallback if no JSON found - try to extract content from the raw text
+                logger.warning("No valid JSON found in response, attempting to extract content")
+                
+                # Check if the result_text itself looks like it contains JSON
+                if '"title"' in result_text and '"content"' in result_text:
+                    # Try to extract content field from malformed JSON using better regex
+                    content_pattern = r'"content"\s*:\s*"((?:[^"\\]|\\.)*)"\s*[,}]'
+                    title_pattern = r'"title"\s*:\s*"((?:[^"\\]|\\.)*)"\s*[,}]'
+                    
+                    content_match = re.search(content_pattern, result_text, re.DOTALL)
+                    title_match = re.search(title_pattern, result_text)
+                    
+                    extracted_content = None
+                    extracted_title = "Generated Article"
+                    
+                    if content_match:
+                        extracted_content = content_match.group(1)
+                        # Properly unescape JSON string
+                        extracted_content = extracted_content.replace('\\n', '\n').replace('\\"', '"').replace('\\\\', '\\').replace('\\t', '\t')
+                    
+                    if title_match:
+                        extracted_title = title_match.group(1)
+                        extracted_title = extracted_title.replace('\\n', ' ').replace('\\"', '"').replace('\\\\', '\\').replace('\\t', ' ')
+                    
+                    # Only use extracted content if we successfully extracted it
+                    if extracted_content:
                         result = {
-                            "title": "Generated Article",
-                            "content": result_text,
+                            "title": extracted_title,
+                            "content": extracted_content,
                             "summary": "",
                             "topics": [],
                             "sources_used": [a.title for a in source_articles]
                         }
-            else:
-                # Fallback if JSON parsing fails
-                result = {
-                    "title": "Generated Article",
-                    "content": result_text,
-                    "summary": "",
-                    "topics": [],
-                    "sources_used": [a.title for a in source_articles]
-                }
+                    else:
+                        # If we couldn't extract content, clean the raw text
+                        # Remove JSON formatting artifacts
+                        cleaned_text = result_text
+                        # Remove common JSON patterns
+                        cleaned_text = re.sub(r'^\s*\{?\s*"?title"?\s*:\s*"?', '', cleaned_text)
+                        cleaned_text = re.sub(r'"?\s*,?\s*"?content"?\s*:\s*"?', '', cleaned_text)
+                        cleaned_text = re.sub(r'"?\s*,?\s*"?summary"?\s*:.*$', '', cleaned_text, flags=re.MULTILINE)
+                        cleaned_text = re.sub(r'"?\s*,?\s*"?topics"?\s*:.*$', '', cleaned_text, flags=re.MULTILINE)
+                        cleaned_text = re.sub(r'"?\s*,?\s*"?sources_used"?\s*:.*$', '', cleaned_text, flags=re.MULTILINE)
+                        cleaned_text = re.sub(r'"?\s*,?\s*"?suggested_media"?\s*:.*$', '', cleaned_text, flags=re.MULTILINE)
+                        cleaned_text = re.sub(r'\}\s*$', '', cleaned_text)
+                        cleaned_text = cleaned_text.strip(' "\n\t')
+                        
+                        result = {
+                            "title": extracted_title,
+                            "content": cleaned_text,
+                            "summary": "",
+                            "topics": [],
+                            "sources_used": [a.title for a in source_articles]
+                        }
+                else:
+                    # If it's not JSON at all, try to clean it anyway
+                    cleaned_text = result_text
+                    # Remove any JSON-like patterns that might have leaked through
+                    cleaned_text = re.sub(r'^\s*```json\s*', '', cleaned_text)
+                    cleaned_text = re.sub(r'\s*```\s*$', '', cleaned_text)
+                    cleaned_text = re.sub(r'^\s*\{.*?"content"\s*:\s*"', '', cleaned_text, flags=re.DOTALL)
+                    cleaned_text = re.sub(r'",?\s*".*?\}\s*$', '', cleaned_text, flags=re.DOTALL)
+                    cleaned_text = cleaned_text.strip()
+                    
+                    result = {
+                        "title": "Generated Article",
+                        "content": cleaned_text if cleaned_text else result_text,
+                        "summary": "",
+                        "topics": [],
+                        "sources_used": [a.title for a in source_articles]
+                    }
             
             # Add media items
             result['media_items'] = media_items

@@ -44,12 +44,12 @@ class LocalClusterBuilder:
         self.verbose = verbose
         self.sentence_model = None
         
-        # Initialize TF-IDF vectorizer with optimized settings
+        # Initialize TF-IDF vectorizer with optimized settings for speed
         self.tfidf_vectorizer = TfidfVectorizer(
-            max_features=5000,
+            max_features=1000,  # Reduced for speed
             stop_words='english',
-            ngram_range=(1, 3),
-            min_df=1,
+            ngram_range=(1, 2),  # Reduced n-gram range
+            min_df=2,  # Increased min_df
             max_df=0.9,
             use_idf=True,
             smooth_idf=True,
@@ -74,8 +74,8 @@ class LocalClusterBuilder:
                 # Use a small, fast model
                 self.sentence_model = SentenceTransformer('all-MiniLM-L6-v2')
                 logger.info("Loaded sentence transformer model")
-            except ImportError:
-                logger.warning("sentence-transformers not installed")
+            except (ImportError, OSError) as e:
+                logger.warning(f"Could not load sentence-transformers: {e}")
                 self.use_sentence_transformers = False
         
         # Entity patterns
@@ -128,13 +128,9 @@ class LocalClusterBuilder:
             min_cluster_size
         )
         
-        # Enhance clusters with metadata
-        enhanced_clusters = []
-        for cluster_articles in clusters:
-            cluster_data = self._enhance_cluster(cluster_articles)
-            enhanced_clusters.append(cluster_data)
-        
-        return enhanced_clusters
+        # Return just the clusters (lists of articles)
+        # The enhancement will be done when creating the cluster object
+        return clusters
     
     def _calculate_tfidf_similarity(self, articles: List) -> np.ndarray:
         """Calculate TF-IDF based similarity matrix."""
@@ -162,7 +158,7 @@ class LocalClusterBuilder:
             similarity = np.zeros((len(articles), len(articles)))
             for i in range(len(articles)):
                 for j in range(i+1, len(articles)):
-                    sim = self._simple_similarity(articles[i], articles[j])
+                    sim = self._simple_similarity(articles[int(i)], articles[int(j)])
                     similarity[i][j] = sim
                     similarity[j][i] = sim
         
@@ -210,7 +206,7 @@ class LocalClusterBuilder:
         # Boost similarity for articles with similar titles
         for i in range(len(articles)):
             for j in range(i+1, len(articles)):
-                title_sim = self._title_similarity(articles[i].title, articles[j].title)
+                title_sim = self._title_similarity(articles[int(i)].title, articles[int(j)].title)
                 
                 # Strong title match boosts overall similarity
                 if title_sim > 0.8:
@@ -218,7 +214,7 @@ class LocalClusterBuilder:
                     similarity[j][i] = similarity[i][j]
                 
                 # Penalize same-source articles to encourage diversity
-                if articles[i].feed.website_id == articles[j].feed.website_id:
+                if articles[int(i)].feed.website_id == articles[int(j)].feed.website_id:
                     similarity[i][j] *= 0.7
                     similarity[j][i] = similarity[i][j]
         
@@ -347,7 +343,7 @@ class LocalClusterBuilder:
             
             # Check if cluster is large enough
             if len(cluster_indices) >= min_size:
-                cluster = [articles[idx] for idx in cluster_indices]
+                cluster = [articles[int(idx)] for idx in cluster_indices]
                 clusters.append(cluster)
                 used.update(cluster_indices)
         

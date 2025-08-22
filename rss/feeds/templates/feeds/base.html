@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}RSS Feed Aggregator{% endblock %}</title>
+    
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    
     <style>
         * {
             margin: 0;
@@ -270,7 +274,6 @@
                 <li><a href="{% url 'feeds:analysis-dashboard' %}">Analysis</a></li>
                 <li><a href="{% url 'feeds:generated-content-list' %}">Generated</a></li>
                 <li><a href="{% url 'feeds:celery-monitor' %}">Monitor</a></li>
-                <li><a href="/admin/">Admin</a></li>
                 {% if user.is_authenticated %}
                 <li style="margin-left: auto;">
                     <span style="color: #95a5a6; padding: 0.5rem 1rem; display: inline-block;">
@@ -306,5 +309,10 @@
             <p>&copy; 2024 RSS Feed Aggregator</p>
         </div>
     </footer>
+    
+    <!-- jQuery, Popper.js, and Bootstrap JS -->
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.5.4/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
 </body>
 </html>

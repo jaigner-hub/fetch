@@ -31,6 +31,7 @@
 
 <div style="margin-bottom: 2rem;">
     <a href="{% url 'feeds:website-edit' website.pk %}" class="btn">Edit</a>
+    <a href="{% url 'feeds:manage-feeds' website.pk %}" class="btn btn-info">Manage Feeds</a>
     <form method="post" action="{% url 'feeds:website-discover-feeds' website.pk %}" style="display: inline;" id="discover-feeds-form">
         {% csrf_token %}
         <button type="submit" class="btn btn-success" id="discover-feeds-btn" title="Use AI to intelligently discover RSS feeds via OpenRouter">Discover Feeds (AI)</button>

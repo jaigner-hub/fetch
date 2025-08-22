@@ -48,6 +48,12 @@ def discover_feeds_for_website(website_id):
         
         # Process discovered feeds
         for feed_info in results['feeds']:
+            # Check if feed was manually excluded
+            existing_feed = Feed.objects.filter(feed_url=feed_info['url']).first()
+            if existing_feed and existing_feed.manual_exclude:
+                logger.info(f"Skipping manually excluded feed: {feed_info['url']}")
+                continue
+                
             feed, created = Feed.objects.get_or_create(
                 feed_url=feed_info['url'],
                 defaults={
@@ -72,6 +78,12 @@ def discover_feeds_for_website(website_id):
         
         # Process discovered sitemaps (selective, high-value only)
         for sitemap_info in results.get('sitemaps', []):
+            # Check if sitemap was manually excluded
+            existing_sitemap = Feed.objects.filter(feed_url=sitemap_info['url']).first()
+            if existing_sitemap and existing_sitemap.manual_exclude:
+                logger.info(f"Skipping manually excluded sitemap: {sitemap_info['url']}")
+                continue
+                
             sitemap, created = Feed.objects.get_or_create(
                 feed_url=sitemap_info['url'],
                 defaults={
@@ -200,6 +212,9 @@ def fetch_feed_content(feed_id):
                             )
                             new_articles += 1
                             logger.info(f"Created new article: {article.title}")
+                            
+                            # Queue for automatic analysis
+                            analyze_article_after_fetch.delay(article.id)
                     
                     # Update feed status
                     feed.mark_checked(success=True)
@@ -409,6 +424,9 @@ def fetch_selective_sitemap_content(feed_id):
                 )
                 new_articles += 1
                 logger.info(f"Created article from selective sitemap: {article.title}")
+                
+                # Queue for automatic analysis
+                analyze_article_after_fetch.delay(article.id)
                 
                 # Rate limiting
                 import time
@@ -824,6 +842,38 @@ def generate_content_async(self, source_article_ids, style='news', target_length
 
 
 @shared_task
+def analyze_article_after_fetch(article_id, delay_seconds=60):
+    """
+    Queue article for analysis after a short delay to allow batch processing.
+    
+    Args:
+        article_id: ID of the Article to analyze
+        delay_seconds: Delay before analysis (to allow batching)
+    """
+    try:
+        # Check if article already has analysis
+        article = Article.objects.get(id=article_id)
+        if hasattr(article, 'analysis'):
+            logger.info(f"Article {article_id} already analyzed, skipping")
+            return "Article already analyzed"
+        
+        # Queue for analysis with a small delay
+        analyze_article_async.apply_async(
+            args=[article_id],
+            kwargs={'find_similar': True},
+            countdown=delay_seconds
+        )
+        logger.info(f"Queued article {article_id} for analysis in {delay_seconds} seconds")
+        return "Queued for analysis"
+    except Article.DoesNotExist:
+        logger.error(f"Article {article_id} not found")
+        return "Article not found"
+    except Exception as e:
+        logger.error(f"Error queuing article {article_id} for analysis: {e}")
+        return f"Error: {str(e)}"
+
+
+@shared_task
 def batch_analyze_recent_articles(hours=24, limit=50):
     """
     Batch analyze recent articles that haven't been analyzed yet.
@@ -852,3 +902,86 @@ def batch_analyze_recent_articles(hours=24, limit=50):
     
     logger.info(f"Queued {analyzed_count} articles for analysis")
     return f"Queued {analyzed_count} articles for analysis"
+
+
+@shared_task
+def generate_article_clusters(hours=48, min_cluster_size=2, force_regenerate=False):
+    """
+    Generate article clusters for recent content.
+    
+    Args:
+        hours: Time window to look for articles (default 48 hours)
+        min_cluster_size: Minimum number of articles to form a cluster
+        force_regenerate: Whether to regenerate existing clusters
+    """
+    from .local_clustering import LocalClusterBuilder
+    from .models import Article, ArticleCluster
+    from django.utils import timezone
+    from datetime import timedelta
+    
+    logger.info(f"Starting cluster generation for last {hours} hours")
+    
+    # Get time window
+    since = timezone.now() - timedelta(hours=hours)
+    
+    # Get articles in time window - limit to a manageable number
+    # Convert QuerySet to list to avoid issues with numpy indexing
+    articles_qs = Article.objects.filter(
+        published_date__gte=since
+    ).select_related('feed__website').order_by('-published_date')[:500]  # Limit to 500 most recent
+    
+    articles = list(articles_qs)  # Convert to list for indexing
+    article_count = len(articles)
+    logger.info(f"Processing {article_count} most recent articles from time window")
+    
+    if article_count < min_cluster_size:
+        logger.info("Not enough articles to form clusters")
+        return f"Not enough articles to cluster (found {article_count}, need at least {min_cluster_size})"
+    
+    # Optionally clear existing clusters in this time window
+    if force_regenerate:
+        old_clusters = ArticleCluster.objects.filter(
+            latest_article__gte=since
+        )
+        old_count = old_clusters.count()
+        old_clusters.delete()
+        logger.info(f"Deleted {old_count} existing clusters")
+    
+    # Initialize clustering (without sentence transformers for speed)
+    clusterer = LocalClusterBuilder(
+        use_sentence_transformers=False,  # Disabled for speed
+        similarity_threshold=0.45,
+        min_cluster_size=min_cluster_size
+    )
+    
+    # Build clusters
+    clusters = clusterer.build_clusters(
+        articles,
+        min_cluster_size=min_cluster_size,
+        similarity_threshold=0.45,
+        time_window_hours=hours,
+        method='tfidf'  # Use only TF-IDF for speed
+    )
+    
+    # Create cluster objects in database
+    created_clusters = 0
+    total_articles_clustered = 0
+    
+    for cluster_articles in clusters:
+        if len(cluster_articles) >= min_cluster_size:
+            # Check if cluster already exists
+            article_ids = [a.id for a in cluster_articles]
+            existing = ArticleCluster.objects.filter(
+                articles__in=article_ids
+            ).distinct().first()
+            
+            if not existing:
+                # Create new cluster
+                cluster = clusterer.create_cluster_from_articles(cluster_articles)
+                if cluster:
+                    created_clusters += 1
+                    total_articles_clustered += len(cluster_articles)
+                    logger.info(f"Created cluster '{cluster.title}' with {len(cluster_articles)} articles")
+    
+    logger.info(f"Cluster generation complete. Created {created_clusters} clusters with {total_articles_clustered} articles")
+    return f"Created {created_clusters} clusters with {total_articles_clustered} articles from {article_count} total articles"

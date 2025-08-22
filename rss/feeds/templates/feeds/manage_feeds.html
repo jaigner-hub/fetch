@@ -1,0 +1,227 @@
+{% extends "feeds/base.html" %}
+
+{% block title %}Manage Feeds - {{ website.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h1>Manage Feeds</h1>
+            <h3 class="text-muted">{{ website.name }}</h3>
+            <a href="{% url 'feeds:website-detail' website.id %}" class="btn btn-sm btn-secondary">
+                ← Back to Website
+            </a>
+        </div>
+        <div class="col-md-4 text-right">
+            <button class="btn btn-success" data-toggle="modal" data-target="#addFeedModal">
+                + Add New Feed
+            </button>
+            <a href="{% url 'feeds:website-discover-feeds' website.id %}" class="btn btn-primary">
+                🔍 Discover Feeds
+            </a>
+        </div>
+    </div>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Feed Title</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Articles</th>
+                            <th>Recent (7d)</th>
+                            <th>Last Checked</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for feed in feeds %}
+                        <tr class="{% if not feed.active %}table-secondary{% endif %} {% if feed.manual_exclude %}table-danger{% endif %}">
+                            <td>
+                                <strong>{{ feed.title|default:"No Title" }}</strong><br>
+                                <small class="text-muted">{{ feed.feed_url|truncatechars:80 }}</small>
+                                {% if feed.description %}
+                                    <br><small>{{ feed.description|truncatechars:100 }}</small>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge badge-{% if feed.feed_type == 'RSS' %}primary{% elif feed.feed_type == 'ATOM' %}info{% else %}warning{% endif %}">
+                                    {{ feed.feed_type }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if feed.manual_exclude %}
+                                    <span class="badge badge-danger">Excluded</span>
+                                {% elif feed.active %}
+                                    <span class="badge badge-success">Active</span>
+                                {% else %}
+                                    <span class="badge badge-secondary">Disabled</span>
+                                {% endif %}
+                                {% if feed.error_count > 0 %}
+                                    <br><small class="text-danger">{{ feed.error_count }} errors</small>
+                                {% endif %}
+                            </td>
+                            <td>{{ feed.article_count }}</td>
+                            <td>{{ feed.recent_articles }}</td>
+                            <td>
+                                {% if feed.last_checked %}
+                                    {{ feed.last_checked|date:"M d, H:i" }}
+                                {% else %}
+                                    Never
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm" role="group">
+                                    {% if feed.manual_exclude %}
+                                        <form method="post" style="display: inline;">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="action" value="unexclude_feed">
+                                            <input type="hidden" name="feed_id" value="{{ feed.id }}">
+                                            <button type="submit" class="btn btn-success" title="Re-enable this feed">
+                                                ✓ Re-enable
+                                            </button>
+                                        </form>
+                                    {% else %}
+                                        {% if feed.active %}
+                                            <form method="post" style="display: inline;">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="action" value="toggle_feed">
+                                                <input type="hidden" name="feed_id" value="{{ feed.id }}">
+                                                <button type="submit" class="btn btn-warning" title="Disable this feed">
+                                                    ⏸ Disable
+                                                </button>
+                                            </form>
+                                        {% else %}
+                                            <form method="post" style="display: inline;">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="action" value="toggle_feed">
+                                                <input type="hidden" name="feed_id" value="{{ feed.id }}">
+                                                <button type="submit" class="btn btn-success" title="Enable this feed">
+                                                    ▶ Enable
+                                                </button>
+                                            </form>
+                                        {% endif %}
+                                        
+                                        <form method="post" style="display: inline;">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="action" value="exclude_feed">
+                                            <input type="hidden" name="feed_id" value="{{ feed.id }}">
+                                            <button type="submit" class="btn btn-danger" 
+                                                    onclick="return confirm('Exclude this feed? It will be disabled and won\'t be re-added by auto-discovery.')"
+                                                    title="Exclude feed permanently">
+                                                🚫 Exclude
+                                            </button>
+                                        </form>
+                                    {% endif %}
+                                    
+                                    <a href="{% url 'feeds:feed-detail' feed.id %}" class="btn btn-info" title="View details">
+                                        👁 View
+                                    </a>
+                                    
+                                    <a href="{% url 'feeds:feed-refresh' feed.id %}" class="btn btn-primary" title="Fetch now">
+                                        🔄 Fetch
+                                    </a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7" class="text-center text-muted">
+                                No feeds found for this website. 
+                                <a href="{% url 'feeds:website-discover-feeds' website.id %}">Discover feeds</a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="mt-4">
+        <h4>Feed Management Guide</h4>
+        <ul>
+            <li><strong>Disable:</strong> Temporarily stops fetching articles from the feed</li>
+            <li><strong>Exclude:</strong> Permanently disables the feed and prevents auto-discovery from re-adding it</li>
+            <li><strong>Re-enable:</strong> Restores an excluded feed to active status</li>
+            <li><strong>Fetch:</strong> Immediately fetches new articles from the feed</li>
+        </ul>
+    </div>
+</div>
+
+<!-- Add Feed Modal -->
+<div class="modal fade" id="addFeedModal" tabindex="-1" role="dialog" aria-labelledby="addFeedModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="add_feed">
+                
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addFeedModalLabel">Add New Feed</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="feed_url">Feed URL *</label>
+                        <input type="url" class="form-control" id="feed_url" name="feed_url" required
+                               placeholder="https://example.com/feed.xml">
+                        <small class="form-text text-muted">Enter the full URL of the RSS/Atom feed or sitemap</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="feed_title">Title (Optional)</label>
+                        <input type="text" class="form-control" id="feed_title" name="feed_title"
+                               placeholder="Feed title (will be auto-detected if not provided)">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="feed_description">Description (Optional)</label>
+                        <textarea class="form-control" id="feed_description" name="feed_description" rows="2"
+                                  placeholder="Brief description of the feed"></textarea>
+                    </div>
+                    
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="fetch_now" name="fetch_now" value="true" checked>
+                        <label class="form-check-label" for="fetch_now">
+                            Validate and fetch content immediately
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Feed</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Auto-hide alerts after 5 seconds
+setTimeout(function() {
+    $('.alert').fadeOut('slow');
+}, 5000);
+</script>
+{% endblock %}

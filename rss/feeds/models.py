@@ -85,6 +85,7 @@ class Feed(models.Model):
     last_checked = models.DateTimeField(null=True, blank=True, help_text="Last time this feed was checked")
     last_successful_fetch = models.DateTimeField(null=True, blank=True)
     active = models.BooleanField(default=True, help_text="Whether to actively check this feed")
+    manual_exclude = models.BooleanField(default=False, help_text="Manually excluded, won't be re-added by auto-discovery")
     error_count = models.IntegerField(default=0, help_text="Number of consecutive fetch errors")
     last_error = models.TextField(blank=True, help_text="Last error message")
     created_at = models.DateTimeField(auto_now_add=True)

@@ -1237,5 +1237,130 @@ def article_clusters(request):
     }
     
     return render(request, 'feeds/article_clusters.html', context)
+
+
+@login_required
+def manage_feeds(request, website_id):
+    """Manage feeds for a specific website."""
+    website = get_object_or_404(Website, id=website_id)
+    
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        
+        if action == 'toggle_feed':
+            feed_id = request.POST.get('feed_id')
+            feed = get_object_or_404(Feed, id=feed_id, website=website)
+            feed.active = not feed.active
+            feed.save()
+            status = 'enabled' if feed.active else 'disabled'
+            messages.success(request, f"Feed '{feed.title or feed.feed_url}' has been {status}.")
+            
+        elif action == 'exclude_feed':
+            feed_id = request.POST.get('feed_id')
+            feed = get_object_or_404(Feed, id=feed_id, website=website)
+            feed.manual_exclude = True
+            feed.active = False
+            feed.save()
+            messages.success(request, f"Feed '{feed.title or feed.feed_url}' has been excluded and won't be re-added by auto-discovery.")
+            
+        elif action == 'unexclude_feed':
+            feed_id = request.POST.get('feed_id')
+            feed = get_object_or_404(Feed, id=feed_id, website=website)
+            feed.manual_exclude = False
+            feed.active = True
+            feed.save()
+            messages.success(request, f"Feed '{feed.title or feed.feed_url}' has been re-enabled.")
+            
+        elif action == 'delete_feed':
+            feed_id = request.POST.get('feed_id')
+            feed = get_object_or_404(Feed, id=feed_id, website=website)
+            feed_title = feed.title or feed.feed_url
+            # Mark as excluded so it won't be re-added
+            feed.manual_exclude = True
+            feed.active = False
+            feed.save()
+            # Optionally delete the feed entirely
+            if request.POST.get('hard_delete') == 'true':
+                feed.delete()
+                messages.success(request, f"Feed '{feed_title}' has been permanently deleted.")
+            else:
+                messages.success(request, f"Feed '{feed_title}' has been disabled and excluded.")
+                
+        elif action == 'add_feed':
+            feed_url = request.POST.get('feed_url', '').strip()
+            if feed_url:
+                # Check if feed already exists
+                existing = Feed.objects.filter(feed_url=feed_url).first()
+                if existing:
+                    if existing.website != website:
+                        messages.error(request, f"This feed already exists for website '{existing.website.name}'.")
+                    elif existing.manual_exclude:
+                        # Re-enable if it was excluded
+                        existing.manual_exclude = False
+                        existing.active = True
+                        existing.save()
+                        messages.success(request, f"Feed '{existing.title or feed_url}' has been re-enabled.")
+                    else:
+                        messages.info(request, "This feed already exists for this website.")
+                else:
+                    # Create new feed
+                    feed = Feed.objects.create(
+                        website=website,
+                        feed_url=feed_url,
+                        feed_type='RSS',  # Default, will be validated later
+                        title=request.POST.get('feed_title', ''),
+                        description=request.POST.get('feed_description', ''),
+                        active=True
+                    )
+                    messages.success(request, f"Feed '{feed_url}' has been added successfully.")
+                    
+                    # Optionally validate and fetch immediately
+                    if request.POST.get('fetch_now') == 'true':
+                        from .tasks import fetch_feed_content
+                        fetch_feed_content.delay(feed.id)
+                        messages.info(request, "Feed validation and content fetch has been queued.")
+        
+        return redirect('feeds:manage-feeds', website_id=website.id)
+    
+    # Get all feeds for this website
+    feeds = Feed.objects.filter(website=website).order_by('-active', 'feed_type', 'title')
+    
+    # Get statistics for each feed
+    for feed in feeds:
+        feed.article_count = Article.objects.filter(feed=feed).count()
+        feed.recent_articles = Article.objects.filter(
+            feed=feed,
+            fetched_at__gte=timezone.now() - timedelta(days=7)
+        ).count()
+        
+    context = {
+        'website': website,
+        'feeds': feeds,
+        'feed_types': Feed.FEED_TYPE_CHOICES,
+    }
+    
+    return render(request, 'feeds/manage_feeds.html', context)
+
+
+@login_required
+def generate_clusters_view(request):
+    """Trigger cluster generation for recent articles."""
+    if request.method == 'POST':
+        hours = int(request.POST.get('hours', 48))
+        min_size = int(request.POST.get('min_size', 2))
+        force_regenerate = request.POST.get('force_regenerate') == 'true'
+        
+        # Queue the cluster generation task
+        from .tasks import generate_article_clusters
+        task = generate_article_clusters.delay(
+            hours=hours,
+            min_cluster_size=min_size,
+            force_regenerate=force_regenerate
+        )
+        
+        messages.success(request, f"Cluster generation started. Task ID: {task.id}")
+        messages.info(request, f"Generating clusters for articles from the last {hours} hours with minimum {min_size} articles per cluster.")
+        
+    return redirect('feeds:article-clusters')
     
 

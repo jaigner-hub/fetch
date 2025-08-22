@@ -30,6 +30,7 @@ urlpatterns = [
     path('websites/<int:pk>/delete/', views.WebsiteDeleteView.as_view(), name='website-delete'),
     path('websites/<int:pk>/discover/', views.discover_feeds, name='website-discover-feeds'),
     path('websites/<int:pk>/fetch-all/', views.fetch_all_content, name='website-fetch-all'),
+    path('websites/<int:website_id>/feeds/', views.manage_feeds, name='manage-feeds'),
     
     # Feed URLs
     path('feeds/', views.FeedListView.as_view(), name='feed-list'),
@@ -61,6 +62,7 @@ urlpatterns = [
     
     # Article Clusters
     path('clusters/', views.article_clusters, name='article-clusters'),
+    path('clusters/generate/', views.generate_clusters_view, name='generate-clusters'),
     
     # Celery Monitor
     path('monitor/', views_celery_monitor.celery_monitor, name='celery-monitor'),
