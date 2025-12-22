@@ -20,13 +20,13 @@ logger = logging.getLogger(__name__)
 class ContentFetcher:
     """Fetches and processes content from RSS feeds and web pages."""
     
-    def __init__(self, timeout: int = 15, rate_limit_delay: float = 1.0):
+    def __init__(self, timeout: int = 15, rate_limit_delay: float = 2.0):
         """
         Initialize the content fetcher.
-        
+
         Args:
             timeout: Request timeout in seconds
-            rate_limit_delay: Delay between requests to same domain in seconds
+            rate_limit_delay: Delay between requests to same domain in seconds (default 2.0 for politeness)
         """
         self.timeout = timeout
         self.rate_limit_delay = rate_limit_delay
@@ -36,13 +36,14 @@ class ContentFetcher:
             'User-Agent': 'Mozilla/5.0 (compatible; RSS Content Fetcher/1.0)'
         })
         
-    def fetch_feed_content(self, feed_url: str) -> Dict:
+    def fetch_feed_content(self, feed_url: str, max_retries: int = 3) -> Dict:
         """
         Fetch and parse RSS/Atom feed content.
-        
+
         Args:
             feed_url: URL of the RSS/Atom feed
-            
+            max_retries: Maximum number of retry attempts for rate limiting
+
         Returns:
             Dictionary with feed info and articles
         """
@@ -52,45 +53,68 @@ class ContentFetcher:
             'articles': [],
             'error': None
         }
-        
-        try:
-            # Fetch the feed
-            response = self.session.get(feed_url, timeout=self.timeout)
-            response.raise_for_status()
-            
-            # Parse the feed
-            parsed = feedparser.parse(response.content)
-            
-            # Check if parsing was successful
-            if parsed.bozo:
-                logger.warning(f"Feed parsing warning for {feed_url}: {parsed.bozo_exception}")
-            
-            # Extract feed info
-            feed_data = parsed.get('feed', {})
-            result['feed_info'] = {
-                'title': feed_data.get('title', ''),
-                'description': feed_data.get('description', ''),
-                'link': feed_data.get('link', ''),
-                'language': feed_data.get('language', ''),
-                'updated': self._parse_date(feed_data.get('updated_parsed'))
-            }
-            
-            # Extract articles
-            for entry in parsed.entries:
-                article = self._parse_entry(entry, feed_url)
-                if article:
-                    result['articles'].append(article)
-            
-            result['success'] = True
-            logger.info(f"Successfully fetched {len(result['articles'])} articles from {feed_url}")
-            
-        except requests.RequestException as e:
-            result['error'] = f"Network error: {str(e)}"
-            logger.error(f"Error fetching feed {feed_url}: {e}")
-        except Exception as e:
-            result['error'] = f"Parse error: {str(e)}"
-            logger.error(f"Error parsing feed {feed_url}: {e}")
-            
+
+        # Apply rate limiting before fetching feed
+        self._apply_rate_limit(feed_url)
+
+        for attempt in range(max_retries):
+            try:
+                # Fetch the feed
+                response = self.session.get(feed_url, timeout=self.timeout)
+
+                # Handle rate limiting (429) with exponential backoff
+                if response.status_code == 429:
+                    retry_after = int(response.headers.get('Retry-After', 0))
+                    backoff_time = max(retry_after, (2 ** attempt) * 5)  # Exponential backoff: 5s, 10s, 20s
+                    logger.warning(f"Rate limited (429) for {feed_url}, waiting {backoff_time}s (attempt {attempt + 1}/{max_retries})")
+                    if attempt < max_retries - 1:
+                        time.sleep(backoff_time)
+                        continue
+                    else:
+                        result['error'] = f"Rate limited (429) after {max_retries} attempts"
+                        return result
+
+                response.raise_for_status()
+
+                # Parse the feed
+                parsed = feedparser.parse(response.content)
+
+                # Check if parsing was successful
+                if parsed.bozo:
+                    logger.warning(f"Feed parsing warning for {feed_url}: {parsed.bozo_exception}")
+
+                # Extract feed info
+                feed_data = parsed.get('feed', {})
+                result['feed_info'] = {
+                    'title': feed_data.get('title', ''),
+                    'description': feed_data.get('description', ''),
+                    'link': feed_data.get('link', ''),
+                    'language': feed_data.get('language', ''),
+                    'updated': self._parse_date(feed_data.get('updated_parsed'))
+                }
+
+                # Extract articles
+                for entry in parsed.entries:
+                    article = self._parse_entry(entry, feed_url)
+                    if article:
+                        result['articles'].append(article)
+
+                result['success'] = True
+                logger.info(f"Successfully fetched {len(result['articles'])} articles from {feed_url}")
+                return result  # Success - exit retry loop
+
+            except requests.RequestException as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Request error for {feed_url}, retrying: {e}")
+                    time.sleep(2 ** attempt)  # Exponential backoff
+                    continue
+                result['error'] = f"Network error: {str(e)}"
+                logger.error(f"Error fetching feed {feed_url}: {e}")
+            except Exception as e:
+                result['error'] = f"Parse error: {str(e)}"
+                logger.error(f"Error parsing feed {feed_url}: {e}")
+                break  # Don't retry parse errors
+
         return result
     
     def _parse_entry(self, entry: Dict, feed_url: str) -> Optional[Dict]:
@@ -290,6 +314,19 @@ class ContentFetcher:
                 }
                 
                 response = self.session.get(article_url, timeout=self.timeout, headers=headers)
+
+                # Handle rate limiting (429) with exponential backoff
+                if response.status_code == 429:
+                    retry_after = int(response.headers.get('Retry-After', 0))
+                    backoff_time = max(retry_after, (2 ** attempt) * 5)
+                    logger.warning(f"Rate limited (429) for {article_url}, waiting {backoff_time}s (attempt {attempt + 1}/{max_retries + 1})")
+                    if attempt < max_retries:
+                        time.sleep(backoff_time)
+                        continue
+                    else:
+                        logger.error(f"Rate limited (429) for {article_url} after {max_retries + 1} attempts")
+                        return None
+
                 response.raise_for_status()
                 
                 # Check content type
@@ -618,8 +655,14 @@ class ContentFetcher:
             }
             
             response = self.session.get(article_url, timeout=self.timeout, headers=headers)
+
+            # Handle rate limiting (429)
+            if response.status_code == 429:
+                logger.warning(f"Rate limited (429) fetching metadata for {article_url}")
+                return metadata  # Return empty metadata rather than failing
+
             response.raise_for_status()
-            
+
             soup = BeautifulSoup(response.content, 'html.parser')
             
             # Extract title

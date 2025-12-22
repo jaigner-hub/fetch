@@ -50,7 +50,7 @@ def retry_on_overload(max_retries=10, initial_delay=3, backoff_factor=1.5, max_d
                     error_str = str(e).lower()
                     
                     # Check if it's an overload error (be more inclusive)
-                    if any(err in error_str for err in ["overloaded", "529", "rate", "timeout", "503", "429"]):
+                    if any(err in error_str for err in ["overloaded", "529", "rate", "timeout", "503", "429", "busy", "in progress"]):
                         if attempt < max_retries:
                             # Add some jitter to avoid thundering herd
                             jittered_delay = delay + random.uniform(0, delay * 0.3)
@@ -476,7 +476,7 @@ class ContentGenerator:
                 self.use_openrouter = False
                 logger.warning("Neither OPENROUTER_API_KEY nor ANTHROPIC_API_KEY configured - AI features will be unavailable")
         
-        self.keygrip_api_key = getattr(settings, 'KEYGRIP_API_KEY', 'zrag_4DCDDfwBj4wAMY1-kRGXk7_g2Vcpyz068JEt2iRqsVc')
+        self.keygrip_api_key = getattr(settings, 'KEYGRIP_API_KEY', 'zrag_OJTsdnz-okuUUt2c2-3OQpI_XujiP6v_b2fE6WUu2NQ')
         self.keygrip_api_url = getattr(settings, 'KEYGRIP_API_URL', 'https://stage.keygrip.ai/api/v1/query/')
     
     @retry_on_overload(max_retries=8, initial_delay=3, backoff_factor=1.5, max_delay=30)
@@ -531,20 +531,31 @@ class ContentGenerator:
             logger.error(f"Error processing OpenRouter response: {e}")
             raise
     
-    @retry_on_overload(max_retries=8, initial_delay=3, backoff_factor=1.5, max_delay=30)
+    @retry_on_overload(max_retries=10, initial_delay=5, backoff_factor=2, max_delay=60)
     def _call_keygrip_api(self, payload: Dict, headers: Dict) -> Dict:
         """Helper method to call Keygrip API with retry logic."""
         response = requests.post(
             self.keygrip_api_url,
             headers=headers,
             json=payload,
-            timeout=30
+            timeout=120  # Increased timeout for longer content generation
         )
-        
+
         if response.status_code == 200:
             return response.json()
         elif response.status_code == 429:  # Rate limit
             raise Exception(f"Keygrip rate limit: {response.status_code}")
+        elif response.status_code == 500:
+            # Check for "Query already in progress" which is a retryable condition
+            try:
+                error_data = response.json()
+                if 'already in progress' in str(error_data.get('error', '')).lower():
+                    logger.warning("Keygrip query already in progress, will retry...")
+                    raise Exception(f"Keygrip busy: {response.status_code}")  # Will trigger retry
+            except (ValueError, KeyError):
+                pass
+            logger.error(f"Keygrip API error: {response.status_code} - {response.text}")
+            raise Exception(f"Keygrip API returned status {response.status_code}")
         else:
             logger.error(f"Keygrip API error: {response.status_code} - {response.text}")
             raise Exception(f"Keygrip API returned status {response.status_code}")
@@ -554,40 +565,59 @@ class ContentGenerator:
         source_articles: List['Article'],
         voice_prompt_id: str = "product_writer",
         use_writing_samples: bool = False,
-        use_web_search: bool = True
+        use_web_search: bool = True,
+        target_length: int = 800
     ) -> Dict:
         """
         Generate a new article using Keygrip AI based on source articles.
-        
+
         Args:
             source_articles: List of Article instances to use as sources
             voice_prompt_id: The voice/style to use for generation
             use_writing_samples: Whether to use writing samples
             use_web_search: Whether to use web search for additional context
-            
+            target_length: Target word count for generated article
+
         Returns:
             Dict containing generated title, content, and metadata
         """
         if not source_articles:
             raise ValueError("At least one source article is required")
-        
+
         # Prepare the query from source articles
         query_parts = []
         media_items = []
-        
+        all_sources = []
+
         for idx, article in enumerate(source_articles[:5]):  # Limit to 5 sources
             clean_content = ArticleAnalyzer().clean_html(article.content)
             if not clean_content:
                 clean_content = article.summary or article.title
-            
+
+            # Get metadata
+            author = article.author or "Unknown"
+            source_name = article.feed.website.name if article.feed and article.feed.website else "Unknown Source"
+            categories = ""
+            if article.raw_data and isinstance(article.raw_data, dict):
+                cats = article.raw_data.get('categories', [])
+                if cats:
+                    categories = f"\nCategories: {', '.join(cats[:5])}"
+
             query_parts.append(f"""
-Article {idx + 1}:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SOURCE ARTICLE {idx + 1}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Title: {article.title}
-Published: {article.published_date}
-Summary: {clean_content[:1000]}
+Source: {source_name}
+Author: {author}
+Published: {article.published_date}{categories}
 URL: {article.url}
+
+FULL CONTENT:
+{clean_content}
 """)
-            
+            all_sources.append(source_name)
+
             # Extract media from raw_data if available
             if article.raw_data and isinstance(article.raw_data, dict):
                 if 'enclosures' in article.raw_data:
@@ -598,17 +628,90 @@ URL: {article.url}
                                 'url': enclosure.get('href', ''),
                                 'caption': f"From: {article.title}"
                             })
-        
-        # Create the query
-        query = f"""Based on the following source articles, create a comprehensive article that synthesizes the information and provides insights:
 
-{' '.join(query_parts)}
+        # Determine article style based on voice_prompt_id
+        style_guidance = {
+            'product_writer': 'Write in a professional, informative style suitable for product coverage and industry news.',
+            'news_writer': 'Write in a journalistic news style with an inverted pyramid structure - most important information first.',
+            'technical_writer': 'Write in a clear, technical style with attention to accuracy and detail.',
+            'creative_writer': 'Write in an engaging, creative style that captures reader attention with vivid language.',
+            'blog_writer': 'Write in a conversational blog style that connects with readers personally.'
+        }.get(voice_prompt_id, 'Write in a professional, engaging style.')
 
-Please create an engaging article that:
-1. Synthesizes information from all sources
-2. Provides fresh perspective and insights
-3. Maintains factual accuracy
-4. Includes proper attribution"""
+        unique_sources = list(set(all_sources))
+
+        # Create the query with improved structure
+        query = f"""You are an expert content writer and SEO specialist creating a new article based on multiple source articles.
+
+TARGET LENGTH: Approximately {target_length} words
+
+WRITING STYLE: {style_guidance}
+
+NUMBER OF SOURCES: {len(source_articles)} articles from {len(unique_sources)} different sources ({', '.join(unique_sources)})
+
+{''.join(query_parts)}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONTENT REQUIREMENTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Create a comprehensive, original article that:
+
+1. SYNTHESIZES information from ALL source articles into a cohesive narrative
+2. Opens with a compelling, SEO-optimized headline containing the primary keyword
+3. Includes a strong lead paragraph that answers who, what, when, where, why
+4. Organizes information with clear H2 and H3 subheadings for scannability
+5. Highlights key facts, developments, and newsworthy elements
+6. Provides context and explains why this matters to readers
+7. Maintains factual accuracy - do not invent facts not present in sources
+8. Concludes with implications, what's next, or a forward-looking statement
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+QUOTE ATTRIBUTION RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+When using quotes or specific claims from sources:
+- Use <blockquote> tags for direct quotes
+- Always attribute: "According to [Source Name]..." or "As reported by [Source Name]..."
+- For statistics or specific facts, cite the source inline
+- Example: <blockquote>"This is a direct quote from the article."</blockquote><p><em>— Source Name</em></p>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SEO OPTIMIZATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+- Include primary keyword in: title, first paragraph, at least one H2, and conclusion
+- Use related keywords naturally throughout the content
+- Write a compelling meta description (150-160 chars) summarizing the article
+- Structure content with H2/H3 hierarchy for featured snippet potential
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REQUIRED JSON OUTPUT FORMAT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You MUST respond with valid JSON in this exact structure:
+
+{{
+    "title": "SEO-optimized headline (60 chars max for search results)",
+    "subtitle": "Compelling subtitle or deck that expands on the headline",
+    "meta_description": "SEO meta description, 150-160 characters summarizing the article",
+    "primary_keyword": "The main keyword/topic this article targets",
+    "content": "<p>Full HTML-formatted article content...</p><h2>Section heading</h2><p>More content...</p><blockquote>Quotes formatted like this</blockquote><p><em>— Attribution</em></p>",
+    "summary": "2-3 sentence summary of the article for previews",
+    "suggested_image_placements": ["After paragraph 1: description of ideal image", "After H2 'Section': description"]
+}}
+
+HTML TAGS TO USE IN CONTENT:
+- <p> for paragraphs
+- <h2> for main section headings
+- <h3> for subsection headings
+- <blockquote> for direct quotes
+- <strong> for emphasis on key terms
+- <em> for attributions and subtle emphasis
+- <ul>/<li> for bullet lists when appropriate
+
+Do NOT simply summarize each article separately - create a unified, original piece that tells the complete story.
+Aim for {target_length} words in the content field."""
         
         try:
             # Make the API call to Keygrip
@@ -625,73 +728,135 @@ Please create an engaging article that:
             }
             
             keygrip_result = self._call_keygrip_api(payload, headers)
-            
+
             # Extract the generated content from Keygrip response
             generated_content = keygrip_result.get('response', '')
-            
+
+            # Log what we received for debugging
+            logger.info(f"Keygrip response type: {type(generated_content)}")
+            logger.info(f"Keygrip response starts with: {generated_content[:200] if generated_content else 'EMPTY'}...")
+
+            # Initialize default values
+            title = 'Generated Article'
+            subtitle = ''
+            content = ''
+            summary = ''
+            meta_description = ''
+            primary_keyword = ''
+            suggested_image_placements = []
+
+            # Pre-process the response - strip markdown code blocks if present
+            json_str = generated_content.strip() if isinstance(generated_content, str) else ''
+            if json_str.startswith('```'):
+                # Remove ```json and ``` wrappers
+                json_str = re.sub(r'^```(?:json)?\s*', '', json_str)
+                json_str = re.sub(r'\s*```$', '', json_str)
+                json_str = json_str.strip()
+
             # Check if the response is a JSON string with structured content
-            if isinstance(generated_content, str) and generated_content.strip().startswith('{'):
+            if json_str.startswith('{'):
                 try:
-                    import json
-                    parsed_content = json.loads(generated_content)
-                    # Extract fields from the parsed JSON
+                    parsed_content = json.loads(json_str)
+                    # Extract all fields from the parsed JSON
                     title = parsed_content.get('title', 'Generated Article')
-                    content = parsed_content.get('content', '')
                     subtitle = parsed_content.get('subtitle', '')
+                    content = parsed_content.get('content', '')
                     summary = parsed_content.get('summary', '')
-                    
+                    meta_description = parsed_content.get('meta_description', '')
+                    primary_keyword = parsed_content.get('primary_keyword', '')
+                    suggested_image_placements = parsed_content.get('suggested_image_placements', [])
+                    logger.info("Successfully parsed JSON response from Keygrip")
+
                     # If no summary provided, create one from content
                     if not summary and content:
                         # Strip HTML tags for summary
-                        import re
                         clean_text = re.sub('<[^<]+?>', '', content)
                         summary = clean_text[:200] + '...' if len(clean_text) > 200 else clean_text
-                except json.JSONDecodeError:
-                    # Not valid JSON, treat as plain text
-                    lines = generated_content.strip().split('\n')
-                    title = lines[0] if lines else "Generated Article"
-                    
-                    # Remove title from content if it appears to be a heading
-                    if lines and (lines[0].startswith('#') or len(lines[0]) < 100):
-                        content = '\n'.join(lines[1:]).strip()
+
+                    # If no meta_description, create from summary
+                    if not meta_description and summary:
+                        meta_description = summary[:160]
+
+                except json.JSONDecodeError as e:
+                    logger.warning(f"JSON parsing failed: {e}. Attempting regex extraction...")
+
+                    # Try regex extraction as fallback for malformed JSON
+                    # Extract content field - handles HTML with escape sequences
+                    content_match = re.search(r'"content"\s*:\s*"((?:[^"\\]|\\.)*)"\s*[,}]', json_str, re.DOTALL)
+                    title_match = re.search(r'"title"\s*:\s*"([^"]*)"', json_str)
+                    subtitle_match = re.search(r'"subtitle"\s*:\s*"([^"]*)"', json_str)
+                    summary_match = re.search(r'"summary"\s*:\s*"([^"]*)"', json_str)
+                    meta_desc_match = re.search(r'"meta_description"\s*:\s*"([^"]*)"', json_str)
+                    keyword_match = re.search(r'"primary_keyword"\s*:\s*"([^"]*)"', json_str)
+
+                    if content_match:
+                        content = content_match.group(1)
+                        # Unescape JSON string escapes
+                        content = content.replace('\\n', '\n').replace('\\"', '"').replace('\\/', '/').replace('\\\\', '\\')
+                        title = title_match.group(1) if title_match else "Generated Article"
+                        subtitle = subtitle_match.group(1) if subtitle_match else ""
+                        summary = summary_match.group(1) if summary_match else ""
+                        meta_description = meta_desc_match.group(1) if meta_desc_match else ""
+                        primary_keyword = keyword_match.group(1) if keyword_match else ""
+                        logger.info("Successfully extracted content using regex fallback")
+
+                        # If no summary, create from content
+                        if not summary and content:
+                            clean_text = re.sub('<[^<]+?>', '', content)
+                            summary = clean_text[:200] + '...' if len(clean_text) > 200 else clean_text
+
+                        if not meta_description and summary:
+                            meta_description = summary[:160]
                     else:
-                        content = generated_content
-                    subtitle = ''
-                    summary = content[:200] + '...' if len(content) > 200 else content
+                        # Final fallback: treat as plain text
+                        logger.warning("Regex extraction failed, treating as plain text")
+                        lines = generated_content.strip().split('\n')
+                        title = lines[0] if lines else "Generated Article"
+
+                        # Remove title from content if it appears to be a heading
+                        if lines and (lines[0].startswith('#') or len(lines[0]) < 100):
+                            content = '\n'.join(lines[1:]).strip()
+                        else:
+                            content = generated_content
+                        summary = content[:200] + '...' if len(content) > 200 else content
+                        meta_description = summary[:160]
             else:
                 # Plain text response
                 lines = generated_content.strip().split('\n')
                 title = lines[0] if lines else "Generated Article"
-                
+
                 # Remove title from content if it appears to be a heading
                 if lines and (lines[0].startswith('#') or len(lines[0]) < 100):
                     content = '\n'.join(lines[1:]).strip()
                 else:
                     content = generated_content
-                subtitle = ''
                 summary = content[:200] + '...' if len(content) > 200 else content
-            
+                meta_description = summary[:160]
+
             result = {
                 'title': title.replace('#', '').strip(),
                 'subtitle': subtitle,
                 'content': content,
                 'summary': summary,
-                'topics': [],
+                'meta_description': meta_description,
+                'primary_keyword': primary_keyword,
+                'suggested_image_placements': suggested_image_placements,
+                'topics': [primary_keyword] if primary_keyword else [],
                 'sources_used': [a.title for a in source_articles],
                 'media_items': media_items,
                 'source_urls': [
-                    {"title": a.title, "url": a.url, "type": "article"} 
+                    {"title": a.title, "url": a.url, "type": "article"}
                     for a in source_articles
                 ],
                 'generation_method': 'keygrip',
                 'voice_prompt_id': voice_prompt_id,
                 'web_sources': keygrip_result.get('sources', []) if use_web_search else []
             }
-            
+
             # Extract topics if available in response
             if 'topics' in keygrip_result:
                 result['topics'] = keygrip_result['topics']
-            
+
             return result
                 
         except Exception as e:
@@ -702,7 +867,9 @@ Please create an engaging article that:
             if self.client:
                 logger.info(f"Claude API key in client: {self.client.api_key[:20]}..." if self.client.api_key else "No API key in client")
             try:
-                return self.generate_article(source_articles, style="news", target_length=800)
+                result = self.generate_article(source_articles, style="news", target_length=800)
+                result['generation_method'] = 'claude_fallback'  # Mark as fallback
+                return result
             except Exception as claude_error:
                 logger.error(f"Claude fallback also failed: {claude_error}")
                 # Both services failed after retries
@@ -713,6 +880,7 @@ Please create an engaging article that:
                     "topics": [],
                     "sources_used": [a.title for a in source_articles],
                     "media_items": media_items,
+                    "generation_method": "failed",
                     "error": f"Keygrip error: {str(e)}, Claude error: {str(claude_error)}"
                 }
     

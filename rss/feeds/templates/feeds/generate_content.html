@@ -24,19 +24,19 @@
                 <label>AI Provider:</label>
                 <div class="radio-group">
                     <label class="radio-label">
-                        <input type="radio" name="ai_provider" value="claude" checked onchange="toggleProviderSettings()">
-                        <span>Claude (Default)</span>
+                        <input type="radio" name="ai_provider" value="keygrip" checked onchange="toggleProviderSettings()">
+                        <span>Keygrip AI (Default)</span>
                     </label>
                     <label class="radio-label">
-                        <input type="radio" name="ai_provider" value="keygrip" onchange="toggleProviderSettings()">
-                        <span>Keygrip AI</span>
+                        <input type="radio" name="ai_provider" value="claude" onchange="toggleProviderSettings()">
+                        <span>Claude</span>
                     </label>
                 </div>
             </div>
         </div>
-        
+
         <!-- Claude Settings -->
-        <div id="claude-settings" class="provider-settings">
+        <div id="claude-settings" class="provider-settings" style="display: none;">
             <h4>Claude Settings</h4>
             <div class="settings-grid">
                 <div class="form-group">
@@ -58,9 +58,9 @@
         </div>
         
         <!-- Keygrip Settings -->
-        <div id="keygrip-settings" class="provider-settings" style="display: none;">
+        <div id="keygrip-settings" class="provider-settings">
             <h4>Keygrip Settings</h4>
-            <input type="hidden" name="use_keygrip" id="use_keygrip" value="">
+            <input type="hidden" name="use_keygrip" id="use_keygrip" value="on">
             <div class="settings-grid">
                 <div class="form-group">
                     <label for="voice_prompt_id">Voice Prompt:</label>

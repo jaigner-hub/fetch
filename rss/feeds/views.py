@@ -1105,7 +1105,8 @@ class GenerateContentView(LoginRequiredMixin, CreateView):
                     source_articles=list(articles),
                     voice_prompt_id=voice_prompt_id,
                     use_writing_samples=use_writing_samples,
-                    use_web_search=use_web_search
+                    use_web_search=use_web_search,
+                    target_length=target_length
                 )
             else:
                 # Use Claude for generation
@@ -1125,6 +1126,7 @@ class GenerateContentView(LoginRequiredMixin, CreateView):
                 topics=result.get('topics', []),
                 media_items=result.get('media_items', []),
                 generation_params={
+                    # Generation settings
                     'style': style if not use_keygrip else voice_prompt_id,
                     'target_length': target_length,
                     'source_count': articles.count(),
@@ -1132,7 +1134,22 @@ class GenerateContentView(LoginRequiredMixin, CreateView):
                     'use_keygrip': use_keygrip,
                     'voice_prompt_id': voice_prompt_id if use_keygrip else None,
                     'use_writing_samples': use_writing_samples if use_keygrip else None,
-                    'use_web_search': use_web_search if use_keygrip else None
+                    'use_web_search': use_web_search if use_keygrip else None,
+                    # SEO data
+                    'meta_description': result.get('meta_description', ''),
+                    'primary_keyword': result.get('primary_keyword', ''),
+                    'suggested_image_placements': result.get('suggested_image_placements', []),
+                    # Generated article data (for raw JSON display)
+                    'article_data': {
+                        'title': result.get('title', ''),
+                        'subtitle': result.get('subtitle', ''),
+                        'summary': result.get('summary', ''),
+                        'meta_description': result.get('meta_description', ''),
+                        'primary_keyword': result.get('primary_keyword', ''),
+                        'suggested_image_placements': result.get('suggested_image_placements', []),
+                        'topics': result.get('topics', []),
+                        'content_preview': result.get('content', '')[:500] + '...' if len(result.get('content', '')) > 500 else result.get('content', '')
+                    }
                 }
             )
             
@@ -1180,15 +1197,26 @@ def article_clusters(request):
     # Get parameters
     hours = int(request.GET.get('hours', 48))
     min_cluster_size = int(request.GET.get('min_size', 2))
-    
+
     # Get time window
     since = timezone.now() - timedelta(hours=hours)
-    
+
+    # Get current project
+    project_id = request.session.get('current_project_id')
+
     # Get AI-identified clusters from database
     ai_clusters = ArticleCluster.objects.filter(
         is_active=True,
         latest_article__gte=since
-    ).prefetch_related(
+    )
+
+    # Filter by current project if one is selected
+    if project_id:
+        ai_clusters = ai_clusters.filter(
+            articles__feed__website__project_id=project_id
+        ).distinct()
+
+    ai_clusters = ai_clusters.prefetch_related(
         'articles',
         'articles__feed__website'
     ).order_by('-source_count', '-latest_article')
@@ -1196,15 +1224,23 @@ def article_clusters(request):
     # Convert to view format
     clusters = []
     for cluster in ai_clusters:
-        if cluster.articles.count() >= min_cluster_size:
+        # Filter articles by project if one is selected
+        if project_id:
+            cluster_articles = list(cluster.articles.filter(
+                feed__website__project_id=project_id
+            ))
+        else:
             cluster_articles = list(cluster.articles.all())
+
+        # Only include clusters that meet minimum size after project filtering
+        if len(cluster_articles) >= min_cluster_size:
             clusters.append({
                 'main_article': cluster_articles[0] if cluster_articles else None,
                 'articles': cluster_articles,
                 'topics': cluster.main_topics,
                 'entities': cluster.key_entities,
-                'size': cluster.articles.count(),
-                'source_diversity': cluster.source_count,
+                'size': len(cluster_articles),
+                'source_diversity': len(set(a.feed.website_id for a in cluster_articles)),
                 'title': cluster.title,
                 'description': cluster.description,
                 'confidence': cluster.confidence_score,
@@ -1214,16 +1250,22 @@ def article_clusters(request):
                 'time_span': (cluster.latest_article - cluster.earliest_article).total_seconds() / 3600 if cluster.earliest_article and cluster.latest_article else 0
             })
     
-    # Count unanalyzed articles
-    unanalyzed_count = Article.objects.filter(
+    # Count unanalyzed articles (filtered by project if selected)
+    unanalyzed_qs = Article.objects.filter(
         published_date__gte=since,
         analysis__isnull=True
-    ).count()
-    
-    # Count total articles in time window
-    total_articles = Article.objects.filter(
+    )
+    if project_id:
+        unanalyzed_qs = unanalyzed_qs.filter(feed__website__project_id=project_id)
+    unanalyzed_count = unanalyzed_qs.count()
+
+    # Count total articles in time window (filtered by project if selected)
+    total_articles_qs = Article.objects.filter(
         published_date__gte=since
-    ).count()
+    )
+    if project_id:
+        total_articles_qs = total_articles_qs.filter(feed__website__project_id=project_id)
+    total_articles = total_articles_qs.count()
     
     context = {
         'clusters': clusters,

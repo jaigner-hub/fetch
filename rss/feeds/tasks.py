@@ -212,9 +212,9 @@ def fetch_feed_content(feed_id):
                             )
                             new_articles += 1
                             logger.info(f"Created new article: {article.title}")
-                            
-                            # Queue for automatic analysis
-                            analyze_article_after_fetch.delay(article.id)
+
+                            # Queue for automatic analysis - DISABLED to save API costs
+                            # analyze_article_after_fetch.delay(article.id)
                     
                     # Update feed status
                     feed.mark_checked(success=True)
@@ -424,9 +424,9 @@ def fetch_selective_sitemap_content(feed_id):
                 )
                 new_articles += 1
                 logger.info(f"Created article from selective sitemap: {article.title}")
-                
-                # Queue for automatic analysis
-                analyze_article_after_fetch.delay(article.id)
+
+                # Queue for automatic analysis - DISABLED to save API costs
+                # analyze_article_after_fetch.delay(article.id)
                 
                 # Rate limiting
                 import time

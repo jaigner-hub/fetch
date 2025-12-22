@@ -134,10 +134,15 @@ class Article(models.Model):
                            help_text="Images found in the article")
     featured_image = models.URLField(max_length=2048, blank=True,
                                    help_text="Main/featured image URL")
-    additional_feeds = models.ManyToManyField(Feed, blank=True, 
+    additional_feeds = models.ManyToManyField(Feed, blank=True,
                                              related_name='cross_posted_articles',
                                              help_text="Other feeds where this article appeared")
-    
+    # Similarity detection fields (from migration 0008)
+    simhash = models.BigIntegerField(null=True, blank=True, db_index=True,
+                                     help_text='SimHash for near-duplicate detection')
+    title_normalized = models.CharField(max_length=500, blank=True, default='', db_index=True,
+                                        help_text='Normalized title for similarity matching')
+
     class Meta:
         ordering = ['-published_date', '-fetched_at']
         indexes = [

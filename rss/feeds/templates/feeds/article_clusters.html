@@ -178,15 +178,9 @@
 
                 <!-- Generate Content Button -->
                 <div class="mt-3">
-                    <form method="post" action="{% url 'feeds:generate-content' %}" style="display: inline;">
-                        {% csrf_token %}
-                        {% for article in cluster.articles %}
-                        <input type="hidden" name="article_ids" value="{{ article.id }}">
-                        {% endfor %}
-                        <button type="submit" class="btn btn-success">
-                            <i class="fas fa-magic"></i> Generate Content from Cluster
-                        </button>
-                    </form>
+                    <button type="button" class="btn btn-success" onclick="openKeygripModal([{% for article in cluster.articles %}{{ article.id }}{% if not forloop.last %}, {% endif %}{% endfor %}], '{{ cluster.title|escapejs }}')">
+                        <i class="fas fa-magic"></i> Generate Content from Cluster
+                    </button>
                 </div>
             </div>
         </div>
@@ -288,7 +282,7 @@
                 </div>
                 <div class="modal-body">
                     <p>Generate clusters by analyzing recent articles and grouping related content from multiple sources.</p>
-                    
+
                     <div class="form-group">
                         <label for="modal_hours">Time Window</label>
                         <select class="form-control" id="modal_hours" name="hours">
@@ -299,7 +293,7 @@
                         </select>
                         <small class="form-text text-muted">Articles within this time window will be analyzed for clustering</small>
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="modal_min_size">Minimum Cluster Size</label>
                         <select class="form-control" id="modal_min_size" name="min_size">
@@ -311,7 +305,7 @@
                         </select>
                         <small class="form-text text-muted">Minimum number of related articles needed to form a cluster</small>
                     </div>
-                    
+
                     <div class="form-check">
                         <input type="checkbox" class="form-check-input" id="force_regenerate" name="force_regenerate" value="true">
                         <label class="form-check-label" for="force_regenerate">
@@ -319,9 +313,9 @@
                         </label>
                         <small class="form-text text-muted">Delete and recreate clusters in the selected time window</small>
                     </div>
-                    
+
                     <div class="alert alert-info mt-3">
-                        <strong>Note:</strong> Cluster generation uses AI to identify related articles. 
+                        <strong>Note:</strong> Cluster generation uses AI to identify related articles.
                         This process may take a few minutes depending on the number of articles.
                     </div>
                 </div>
@@ -333,5 +327,97 @@
         </div>
     </div>
 </div>
+
+<!-- Keygrip Content Generation Modal -->
+<div class="modal fade" id="keygripModal" tabindex="-1" role="dialog" aria-labelledby="keygripModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <form method="post" action="{% url 'feeds:generate-content' %}" id="keygripForm">
+                {% csrf_token %}
+                <input type="hidden" name="use_keygrip" value="on">
+                <div id="keygripArticleIds"></div>
+
+                <div class="modal-header">
+                    <h5 class="modal-title" id="keygripModalLabel">Generate Content with Keygrip</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <strong>Cluster:</strong> <span id="keygripClusterTitle"></span>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="keygrip_voice_prompt_id">Voice Prompt</label>
+                        <select class="form-control" id="keygrip_voice_prompt_id" name="voice_prompt_id">
+                            <option value="product_writer" selected>Product Writer</option>
+                            <option value="news_writer">News Writer</option>
+                            <option value="technical_writer">Technical Writer</option>
+                            <option value="creative_writer">Creative Writer</option>
+                        </select>
+                        <small class="form-text text-muted">Select the writing voice/style for content generation</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Additional Options</label>
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" id="keygrip_use_writing_samples" name="use_writing_samples">
+                            <label class="form-check-label" for="keygrip_use_writing_samples">
+                                Use Writing Samples
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" id="keygrip_use_web_search" name="use_web_search" checked>
+                            <label class="form-check-label" for="keygrip_use_web_search">
+                                Use Web Search
+                            </label>
+                        </div>
+                        <small class="form-text text-muted">Configure additional Keygrip features</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="keygrip_target_length">Target Length (words)</label>
+                        <select class="form-control" id="keygrip_target_length" name="target_length">
+                            <option value="400">Short (~400 words)</option>
+                            <option value="800" selected>Medium (~800 words)</option>
+                            <option value="1200">Long (~1200 words)</option>
+                            <option value="1600">Very Long (~1600 words)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-magic"></i> Generate Content
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function openKeygripModal(articleIds, clusterTitle) {
+    // Set cluster title
+    document.getElementById('keygripClusterTitle').textContent = clusterTitle || 'Selected Articles';
+
+    // Clear existing article IDs
+    var container = document.getElementById('keygripArticleIds');
+    container.innerHTML = '';
+
+    // Add hidden inputs for each article ID
+    articleIds.forEach(function(id) {
+        var input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'article_ids';
+        input.value = id;
+        container.appendChild(input);
+    });
+
+    // Show the modal
+    $('#keygripModal').modal('show');
+}
+</script>
 
 {% endblock %}
